@@ -1,0 +1,126 @@
+---
+title: "Graph Analytics"
+author: "Kyu Cho"
+date: "February 13, 2016"
+output: html_document
+keep_md: yes
+---
+
+
+```{r setoptions, echo = FALSE, warning = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, 
+               warning = FALSE, #Make it FALSE for distribution
+               message = FALSE, #Make it FALSE for distribution
+               fig.width = 12,
+               fig.height = 7)
+```
+
+
+## Introduction
+In this problem, we'll see how clustering can be used to find similar groups of customers who belong to an airline's frequent flyer program. The airline is trying to learn more about its customers so that it can target different customer segments with different types of mileage offers.
+
+The file AirlinesCluster.csv contains information on 3,999 members of the frequent flyer program.
+
+## Variables
+Balance = number of miles eligible for award travel  
+QualMiles = number of miles qualifying for TopFlight status  
+BonusMiles = number of miles earned from non-flight bonus transactions in the past 12 months  
+BonusTrans = number of non-flight bonus transactions in the past 12 months  
+FlightMiles = number of flight miles in the past 12 months  
+FlightTrans = number of flight transactions in the past 12 months  
+DaysSinceEnroll = number of days since enrolled in the frequent flyer progra  
+
+```{r caceh=T}
+setwd("F:")
+airlines = read.csv("AirlinesCluster.csv")
+summary(airlines)
+
+library(caret)
+library(cluster)
+library(fpc)
+```
+
+
+## Preprocessing
+In this problem, we will normalize our data before we run the clustering algorithms. If we don't normalize the data, the clustering will be dominated by the variables that are on a larger scale.
+```{r cache=T}
+# pre-processes the data
+preproc = preProcess(airlines)
+
+# Performs the normalization
+airlinesNorm = predict(preproc, airlines)
+
+#  mean = 0, sd = 1
+summary(airlinesNorm)
+```
+
+## Finding the best k (finding the 'elbow')
+Now, k-means cluster algorithm requires us to specified the right number of clusters.  
+Flowing function will show the point where the error rate is  stop decreasing. 
+
+```{r cache=T}
+# Initialise ratio_ss 
+ratio_ss = rep(0)
+
+# Finish the for-loop. 
+for (k in 1:7) {
+     mdl_km = kmeans(airlinesNorm, centers = k, nstart = 20)
+     # Save the ratio between of WSS to TSS in kth element of ratio_ss
+     ratio_ss[k] = mdl_km$tot.withinss/mdl_km$totss
+}
+
+# Make a scree plot with type "b" and xlab "k"
+plot(ratio_ss, type="b", xlab="k")
+```
+
+As we see, k = 5 seems legitimate.
+
+## Build kmeans model
+```{r cache=T}
+# Cluster run_record_sc using k-means: mdl_km 5 groups, let R start over 20 times
+mdl_km = kmeans(airlinesNorm, centers = 5, nstart = 20, iter.max=1000)
+table(mdl_km$cluster)
+mdl_km$centers
+plotcluster(airlinesNorm, mdl_km$cluster)
+```
+
+Let's try different clustering algorithm.
+
+## Build Hierarchical clustering model
+```{r cache=T}
+airlinesDist = dist(airlinesNorm, method="euclidean")
+airlinesHierClust = hclust(airlinesDist, method="ward.D")
+clusterGroups = cutree(airlinesHierClust, k = 5)
+table(clusterGroups)
+
+plotcluster(airlinesNorm, clusterGroups)
+with(airlinesNorm, pairs(airlinesNorm, col=c(1:3)[clusterGroups])) 
+
+# Now, use tapply to compare the average values in each of the variables for the 5 clusters (the centroids of the clusters). You may want to compute the average values of the unnormalized data so that it is easier to interpret. 
+balanceAvg = tapply(airlines$Balance, clusterGroups, mean)
+qualMilesAvg = tapply(airlines$QualMiles, clusterGroups, mean)
+bonusMilesAvg = tapply(airlines$BonusMiles, clusterGroups, mean)
+bonusTransAvg = tapply(airlines$BonusTrans, clusterGroups, mean)
+flightMilesAvg = tapply(airlines$FlightMiles, clusterGroups, mean)
+flightTransAvg = tapply(airlines$FlightTrans, clusterGroups, mean)
+daysAvg = tapply(airlines$DaysSinceEnroll, clusterGroups, mean)
+
+df = as.data.frame(cbind(balanceAvg, qualMilesAvg, bonusMilesAvg, bonusTransAvg, flightMilesAvg, flightTransAvg, daysAvg))
+df
+
+which.max(df$balanceAvg)
+which.max(df$qualMilesAvg)
+which.max(df$bonusMilesAvg)
+which.max(df$bonusTransAvg)
+which.max(df$flightMilesAvg)
+which.max(df$flightTransAvg)
+which.max(df$daysAvg)
+```
+
+## Anlaysis
+Cluster 1 mostly contains customers with few miles, but who have been with the airline the longest.  
+Cluster 2 contains customers with a large amount of miles, mostly accumulated through flight transactions.  
+Cluster 3 mostly contains customers with a lot of miles, and who have earned the miles mostly through bonus transactions.  
+Cluster 4 customers have the smallest value in DaysSinceEnroll, but they are already accumulating a reasonable number of miles.  
+Cluster 5 customers have lower than average values in all variables.  

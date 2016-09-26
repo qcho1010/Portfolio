@@ -1,0 +1,124 @@
+---
+title: "Week2-4_Assign2_Reading Test Scores"
+author: "Kyu Cho"
+date: "Wednesday, June 17, 2015"
+output: html_document
+---
+#Introduction
+The Programme for International Student Assessment (PISA) is a test given every three years to 15-year-old students from around the world to evaluate their performance in mathematics, reading, and science. This test provides a quantitative way to compare the performance of students from different parts of the world. In this homework assignment, we will predict the reading scores of students from the United States of America on the 2009 PISA exam.  
+
+The datasets pisa2009train.csv and pisa2009test.csv contain information about the demographics and schools for American students taking the exam, derived from 2009 PISA Public-Use Data Files distributed by the United States National Center for Education Statistics (NCES). While the datasets are not supposed to contain identifying information about students taking the test, by using the data you are bound by the NCES data use agreement, which prohibits any attempt to determine the identity of any student in the datasets.  
+
+Each row in the datasets pisa2009train.csv and pisa2009test.csv represents one student taking the exam. The datasets have the following variables:  
+
+#Variables
+ - grade: The grade in school of the student (most 15-year-olds in America are in 10th grade)
+ - male: Whether the student is male (1/0)
+ - raceeth: The race/ethnicity composite of the student
+ - preschool: Whether the student attended preschool (1/0)
+ - expectBachelors: Whether the student expects to obtain a bachelor's degree (1/0)
+ - motherHS: Whether the student's mother completed high school (1/0)
+ - motherBachelors: Whether the student's mother obtained a bachelor's degree (1/0)
+ - motherWork: Whether the student's mother has part-time or full-time work (1/0)
+ - fatherHS: Whether the student's father completed high school (1/0)
+ - fatherBachelors: Whether the student's father obtained a bachelor's degree (1/0)
+ - fatherWork: Whether the student's father has part-time or full-time work (1/0)
+ - selfBornUS: Whether the student was born in the United States of America (1/0)
+ - motherBornUS: Whether the student's mother was born in the United States of America (1/0)
+ - fatherBornUS: Whether the student's father was born in the United States of America (1/0)
+ - englishAtHome: Whether the student speaks English at home (1/0)
+ - computerForSchoolwork: Whether the student has access to a computer for schoolwork (1/0)
+ - read30MinsADay: Whether the student reads for pleasure for 30 minutes/day (1/0)
+ - minutesPerWeekEnglish: The number of minutes per week the student spend in English class
+ - studentsInEnglish: The number of students in this student's English class at school
+ - schoolHasLibrary: Whether this student's school has a library (1/0)
+ - publicSchool: Whether this student attends a public school (1/0)
+ - urban: Whether this student's school is in an urban area (1/0)
+ - schoolSize: The number of students in this student's school
+ - readingScore: The student's reading score, on a 1000-point scale
+ 
+#DATASET SIZE 
+```{r cache=TRUE} 
+setwd("D:/Google Drive/College/4-The Analytics Edge/data2")
+pisaTrain <- read.csv("pisa2009train.csv")
+pisaTest <- read.csv("pisa2009test.csv")
+str(pisaTrain)
+```
+
+#SUMMARIZING THE DATASET
+Using tapply() on pisaTrain, what is the average reading test score of males and females?
+```{r cache=TRUE}
+tapply(pisaTrain$readingScore, pisaTrain$male, mean)
+```
+
+#REMOVING MISSING VALUES
+```{r cache=TRUE}
+# Remove missing values
+pisaTrain = na.omit(pisaTrain)
+pisaTest = na.omit(pisaTest)
+```
+
+#UNORDERED FACTORS IN REGRESSION MODELS  
+```{r cache=TRUE}
+# Set the reference level of the factor
+pisaTrain$raceeth = relevel(pisaTrain$raceeth, "White")
+pisaTest$raceeth = relevel(pisaTest$raceeth, "White")
+```
+
+# BUILDING A MODEL 
+```{r cache=TRUE}
+lmScore = lm(readingScore ~ ., data = pisaTrain)
+Predicted = predict(lmScore, newdata = pisaTest)
+
+# Finding RMSE
+RMSE0 = sqrt(mean(lmScore$residuals^2))
+# or
+# SSE = sum((Predicted - pisaTrain$readingScore)^2)
+# RMSE1 = sqrt(SSE/lmScore$df.residual)
+# or
+SSE2 = sum(lmScore$residuals^2)
+RMSE2 = sqrt(SSE2/nrow(pisaTrain))
+```
+
+# COMPARING PREDICTIONS FOR SIMILAR STUDENTS
+Consider two students A and B. They have all variable values the same, except that student A is in grade 11 and student B is in grade 9. What is the predicted reading score of student A minus the predicted reading score of student B?  
+```{r cache=TRUE}
+PredictReading <- 29.542707*(11-9)
+# or
+summary(lmScore)$coef[2,1]*(11-9)
+```
+
+#INTERPRETING MODEL COEFFICIENTS  
+What is the meaning of the coefficient associated with variable raceethAsian?  
+A : Predicted difference in the reading score between an Asian and White  
+
+#PREDICTING ON UNSEEN DATA
+What is the range between the maximum and minimum predicted reading score on the test set?  
+```{r cache=TRUE}
+summary(Predicted)
+637.7 - 353.2
+```
+
+Find SSE and RMSE of lmScore on the testing set.
+```{r cache=TRUE}
+SSE3 = sum((Predicted - pisaTest$readingScore)^2)
+RMSE3 = sqrt(SSE3/nrow(pisaTest))
+SSE3
+RMSE3
+```
+
+#BASELINE PREDICTION AND TEST-SET SSE
+What is the predicted test score used in the baseline model and SST?  
+```{r cache=TRUE}
+baseLine = mean(pisaTrain$readingScore)
+SST = sum((baseLine - pisaTest$readingScore)^2)
+baseLine
+SST
+```
+
+What is the test-set R-squared value of lmScore?  
+```{r cache=TRUE}
+R2 = 1 - SSE3/SST
+```
+
+

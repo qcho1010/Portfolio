@@ -1,0 +1,104 @@
+Class: CS 4760 - Operating System.
+4/8/16
+
+STUDENT
+	Kyu S Cho
+	ksc5c7@mail.umsl.edu
+
+EXECUTABLE NAME
+	oss
+
+FILE LIST
+	oss.c
+	oss.h
+	uproc.c
+	README
+	RCS
+	Makefile
+
+							Resource Management
+
+In this part of the assignment, you will design and implement a resource
+management module for our Operating System Simulator oss. In this project, you
+will use the deadlock avoidance strategy, using maximum claims, to manage
+resources.
+
+
+Operating System Simulator
+
+This will be your main program and serve as the master process. You will start
+the operating system simulator (call the executable oss) as one main process
+who will fork multiple children at random times. The randomness will be
+simulated by a logical clock that will be updated by oss as well as user
+processes. Thus, the logical clock resides in shared memory and is accessed as
+a critical resource using a semaphore. You should have two unsigned integers for
+the clock; one will show the time in seconds and the other will show the time in
+nanoseconds, offset from the beginning of a second.
+
+In the beginning, oss will allocate shared memory for system data structures,
+including resource descriptors for each resource.  All the resources are static
+but some of them may be shared. The resource descriptor is a fixed size
+structure and contains information on managing the resources within oss. Make
+sure that you allocate space to keep track of activities that affect the
+resources, such as request, allocation, and release. The resource descriptors
+will reside in shared memory and will be accessible to the child. Create
+descriptors for 20 resources, out of which about 20% should be sharable
+resources ("about" implies that it should be 20 +/- 5% and you should generate
+that number with a random number generator). After creating the descriptors,
+make sure that they are populated with an initial number of resources; assign a
+number between 1 and 10 (inclusive) for the initial instances in each resource
+class. You may have to initialize another structure in the descriptor to
+indicate the allocation of specific instance of a resource to a process.
+
+After the resources have been set up, fork a user process at random times
+(between 1 and 500 milliseconds of your logical clock). Make sure that you
+never have more than 18 user processes in the system. If you already have 18
+processes, do not create any more until some process terminates. Your user
+processes execute concurrently and there is no scheduling performed.  They run
+in a loop constantly till they have to terminate.
+
+oss also makes a decision based on the received requests whether the resources
+should be allocated to processes or not. It does so by running the deadlock
+detection algorithm with the current request from a process and grants the
+resources if there is no deadlock, updating all the data structures. If a
+process releases resources, it updates that as well, and may give resources to
+some waiting processes.
+
+
+User Processes
+
+Since we are simulating deadlock avoidance, each user process starts with
+declaring its maximum claims. The claims can be generated using a random number
+generator, taking into account the fact that no process should ask for more than
+the maximum number of resources in the system. You will do that by generating a
+random number between 0 and the number of instances in the resource descriptor
+for the resource that has already been set up by oss.
+
+At random times (between 0 and 250ms), the process checks if it should
+terminate. If so, it should deallocate all the resources allocated to it. Make
+sure to do this only after a process has run for at least 1 second. If the
+process is not to terminate, make the process request some resources. It will do
+so by putting a request in the shared memory. The request should never exceed
+the maximum claims minus whatever the process already has. Also update the
+system clock. The process may decide to give up resources instead of asking for
+them.
+
+The statistics of interest are:
+
+	* Throughput (the most important parameter for this assignment)
+	* Turnaround time
+	* Waiting time
+	* CPU utilization
+
+Make sure that you have signal handling to terminate all processes, if needed.
+In case of abnormal termination, make sure to remove shared memory and
+semaphores.
+
+
+Deliverables
+
+Handin an electronic copy of all the sources, README, Makefile(s), and results.
+Create your programs in a directory called username .5 where username is your
+login name on hoare. Once you are done with everything, remove the executables
+and object files, and issue the following commands:
+

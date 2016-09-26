@@ -1,0 +1,89 @@
+---
+title: "Week7-4 Election Forcasting"
+author: "Kyu Cho"
+date: "July 16, 2015"
+output: html_document
+---
+# Introduction
+construct US presidential election predictions. We separated our data into a training set, containing data from 2004 and 2008 polls, and a test set, containing the data from 2012 polls. We then proceeded to develop a logistic regression model to forecast the 2012 US presidential election.  
+
+In this homework problem, we'll revisit our logistic regression model from Unit 3, and learn how to plot the output on a map of the United States. Unlike what we did in the Crime lecture, this time we'll be plotting predictions rather than data!  
+
+```{r cache=T}
+library(ggplot2)
+library(caTools)
+setwd("D:/Google Drive/College/4-The Analytics Edge/data7")
+polling = read.csv("PollingImputed.csv")
+str(polling)
+```
+
+# DRAWING A MAP OF THE US
+```{r cache=T}
+statesMap = map_data("state")
+str(statesMap)
+
+# Group, defines the different shapes or polygons on the map.
+# How many different groups are there?
+nrow(table(statesMap$group))
+
+ggplot(statesMap, aes(x=long, y=lat, group=group)) +
+    geom_polygon(fill="white", color="black")
+```
+
+# COLORING THE STATES BY PREDICTIONS  
+```{r cache=TRUE}
+train = subset(polling, Year >= 2004 & Year <= 2008)
+test = subset(polling, Year >= 2012)
+
+model = glm(Republican~SurveyUSA+DiffCount, data=train, family="binomial")
+pred = predict(model, newdata=test, type="response")
+
+predBinary = as.numeric(pred > 0.5)
+predDF = data.frame(pred, predBinary, test$State)
+
+# For how many states is our binary prediction 1 (for 2012), corresponding to Republican?
+sum(predBinary)
+
+# What is the average predicted probability of our model (on the Test set, for 2012)?
+mean(predBinary)
+```
+
+## Merge Data frame with "stateMap"
+```{r cache=T}
+# Unify the state name before the combination.
+predDF$region = tolower(predDF$test.State)
+
+# Merge, some of observations will be removed, if the variable "region" is not co-exist on both datasets.
+predMap = merge(statesMap, predDF, by="region")
+
+# Order
+predMap = predMap[order(predMap$order), ]
+```
+
+## Coloring
+```{r cache=T}
+ggplot(predMap, aes(x=long, y=lat, group=group, fill=predBinary)) +
+    geom_polygon(color="black")
+
+# See the color options
+head(colors())
+
+ggplot(predMap, aes(x=long, y=lat, group=group, fill=predBinary)) + 
+    geom_polygon(color="black") + 
+    scale_fill_gradient(low="blue", high="red", guide="legend", breaks= c(0,1), labels=c("Democrat", "Republican"), name="Prediction 2012")
+```
+
+# UNDERSTANDING THE PREDICTIONS
+```{r cache=T}
+# What was our predicted probability for the state of Florida?
+which(test$State=="Florida")
+pred[6]
+```
+
+# PARAMETER SETTINGS
+```{r cache=TRUE}
+ggplot(predMap, aes(x=long, y=lat, group=group, fill=predBinary)) + 
+    geom_polygon(color="black", linetype=1, size=2, alpha=0.3) + 
+    scale_fill_gradient(low="blue", high="red", guide="legend", breaks= c(0,1), labels=c("Democrat", "Republican"), name="Prediction 2012")
+```
+

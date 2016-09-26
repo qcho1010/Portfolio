@@ -1,0 +1,42 @@
+CLASS: 
+	CS 4760 - Operating System
+	
+DATE:
+	1/29/16
+
+NOTE:
+	main file is just for the testing purpose to operate the log library.
+	
+STUDENT:
+	Kyu S Cho
+	ksc5c7@mail.umsl.edu
+
+FILE LIST:
+	main.c
+	loglib.c
+	log.h
+	README
+	RCS
+	makefile
+
+EXECUTABLE NAME:
+	buggy_code
+
+TO EXECUTE:
+	1.	Execute "make clean" to remove object files and log files
+	2.	Execute "buggy_code -i" where '-i' is an optional argument which will
+		bring up the usefull information regarding the library functions.
+
+DESCRIPTION:
+						Unix System Calls and Library Functions
+The savelog function saves the logged messages to a disk file. 
+The clearlog function releases all the storage that has been allocated for 
+the logged messages and empties the list of logged messages. 
+The getlog function allocates enough space for a string containing the entire log, 
+copies the log into this string, and returns a pointer to the string. 
+It is the responsibility of the calling program to free this memory when necessary.
+If successful, addmsg and savelog return 0. 
+A successful getlog call returns a pointer to the log string. 
+If unsuccessful, addmsg and savelog return –1. 
+An unsuccessful getlog call returns NULL. 
+These three functions also set errno on failure.

@@ -1,0 +1,101 @@
+---
+title: "Week6-4_Airline"
+author: "Kyu Cho"
+date: "July 10, 2015"
+output: html_document
+---
+# Introduction
+Market segmentation is a strategy that divides a broad target market of customers into smaller, more similar groups, and then designs a marketing strategy specifically for each group. Clustering is a common technique for market segmentation since it automatically finds similar groups given a data set.  
+
+In this problem, we'll see how clustering can be used to find similar groups of customers who belong to an airline's frequent flyer program. The airline is trying to learn more about its customers so that it can target different customer segments with different types of mileage offers.  
+
+The file AirlinesCluster.csv contains information on 3,999 members of the frequent flyer program.  
+
+# Variables
+- Balance = number of miles eligible for award travel
+- QualMiles = number of miles qualifying for TopFlight status
+- BonusMiles = number of miles earned from non-flight bonus transactions in the past 12 months
+- BonusTrans = number of non-flight bonus transactions in the past 12 months
+- FlightMiles = number of flight miles in the past 12 months
+- FlightTrans = number of flight transactions in the past 12 months
+- DaysSinceEnroll = number of days since enrolled in the frequent flyer progra
+
+
+```{r cahce=TRUE}
+library(caret)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data6")
+airlines = read.csv("AirlinesCluster.csv")
+summary(airlines)
+```
+
+# NORMALIZING THE DATA
+In this problem, we will normalize our data before we run the clustering algorithms.
+If we don't normalize the data, the clustering will be dominated by the variables that are on a larger scale.  
+```{r cache=TRUE}
+# pre-processes the data
+preproc = preProcess(airlines)
+
+# Performs the normalization
+airlinesNorm = predict(preproc, airlines)
+
+# All mean = 0 now
+# All sd = 1
+summary(airlinesNorm)
+sd(airlinesNorm$Balance)
+sd(airlinesNorm$QualMiles)
+```
+
+# HIERARCHICAL CLUSTERING  
+```{r cache=TRUE}
+airlinesDist = dist(airlinesNorm, method="euclidean")
+airlinesHierClust = hclust(airlinesDist, method="ward.D") 
+plot(airlinesHierClust)
+
+# Assign points to clusters
+clusterGroups = cutree(airlinesHierClust, k = 5)
+table(clusterGroups)
+
+# Now, use tapply to compare the average values in each of the variables for the 5 clusters (the centroids of the clusters). You may want to compute the average values of the unnormalized data so that it is easier to interpret. 
+balanceAvg = tapply(airlines$Balance, clusterGroups, mean)
+qualMilesAvg = tapply(airlines$QualMiles, clusterGroups, mean)
+bonusMilesAvg = tapply(airlines$BonusMiles, clusterGroups, mean)
+bonusTransAvg = tapply(airlines$BonusTrans, clusterGroups, mean)
+flightMilesAvg = tapply(airlines$FlightMiles, clusterGroups, mean)
+flightTransAvg = tapply(airlines$FlightTrans, clusterGroups, mean)
+daysAvg = tapply(airlines$DaysSinceEnroll, clusterGroups, mean)
+
+df = as.data.frame(cbind(balanceAvg, qualMilesAvg, bonusMilesAvg, bonusTransAvg, flightMilesAvg, flightTransAvg, daysAvg))
+df
+
+which.max(df$balanceAvg)
+which.max(df$qualMilesAvg)
+which.max(df$bonusMilesAvg)
+which.max(df$bonusTransAvg)
+which.max(df$flightMilesAvg)
+which.max(df$flightTransAvg)
+which.max(df$daysAvg)
+
+# round(colMeans(subset(airlines, clusterGroups == 1)),2)
+# round(colMeans(subset(airlines, clusterGroups == 2)),2)
+# round(colMeans(subset(airlines, clusterGroups == 3)),2)
+# round(colMeans(subset(airlines, clusterGroups == 4)),2)
+# round(colMeans(subset(airlines, clusterGroups == 5)),2)
+```
+## Anlaysis
+Cluster 1 mostly contains customers with few miles, but who have been with the airline the longest.  
+Cluster 2 contains customers with a large amount of miles, mostly accumulated through flight transactions.  
+Cluster 3 mostly contains customers with a lot of miles, and who have earned the miles mostly through bonus transactions.  
+Cluster 4 customers have the smallest value in DaysSinceEnroll, but they are already accumulating a reasonable number of miles.  
+Cluster 5 customers have lower than average values in all variables.  
+
+# K-MEANS CLUSTERING
+```{r cache=TRUE}
+k = 5
+set.seed(88)
+KmeansCluster = kmeans(airlinesNorm, centers = k, iter.max=1000)
+table(KmeansCluster$cluster) > 1000
+
+KmeansCluster$centers
+```
+

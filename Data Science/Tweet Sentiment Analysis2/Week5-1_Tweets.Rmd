@@ -1,0 +1,131 @@
+---
+title: "Week5-1"
+author: "Kyu Cho"
+date: "July 4, 2015"
+output: html_document
+---
+
+```{r cache=TRUE, echo=TRUE}
+library(caTools)
+library(tm)
+library(SnowballC)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data5")
+
+# stringsAsFactors false for working on a text analytics to read in properly.
+tweets = read.csv("tweets.csv", stringsAsFactors = FALSE)
+summary(tweets)
+str(tweets)
+```
+
+# Cleaning data
+```{r cache=TRUE}
+# Add negative variable into the frame
+tweets$Negative = as.factor(tweets$Avg <= -1)
+table(tweets$Negative)
+
+corpus = Corpus(VectorSource(tweets$Tweet))
+corpus = tm_map(corpus, tolower)
+corpus = tm_map(corpus, PlainTextDocument)
+corpus = tm_map(corpus, removePunctuation)
+corpus = tm_map(corpus, removeWords, c("apple", stopwords("english")))
+corpus = tm_map(corpus, stemDocument)
+
+# Show first sweet at corpus
+corpus[[1]]
+```
+
+# Removing SpareTerms
+We have too many indipendent variables which means it requires heavy computational.  Let's remove some terms that don't appear very often.
+```{r cache=TRUE}
+# Create matrix
+frequencies = DocumentTermMatrix(corpus)
+
+# Look at matrix 
+inspect(frequencies[1000:1005,505:515])
+
+# Check for sparsity
+findFreqTerms(frequencies, lowfreq=20)
+
+# Remove rest and keep the terms that appear in 5% in the document or more.
+sparse = removeSparseTerms(frequencies, 0.995)
+sparse
+
+# Convert to a data frame
+tweetsSparse = as.data.frame(as.matrix(sparse))
+
+# Make all variable names R-friendly
+# You should do this each time you've built a data frame using text analytics.
+colnames(tweetsSparse) = make.names(colnames(tweetsSparse))
+
+# Add dependent variable
+tweetsSparse$Negative = tweets$Negative
+```
+
+# Build model
+## Split Data
+```{r cache=TRUE}
+# Split the data
+set.seed(123)
+split = sample.split(tweetsSparse$Negative, SplitRatio = 0.7)
+trainSparse = subset(tweetsSparse, split==TRUE)
+testSparse = subset(tweetsSparse, split==FALSE)
+```
+
+## CART model
+```{r cache=TRUE}
+# Build model
+tweetCART = rpart(Negative ~ ., data=trainSparse, method="class")
+prp(tweetCART)
+
+# Evaluate the performance of the model
+predictCART = predict(tweetCART, newdata=testSparse, type="class")
+
+table = table(testSparse$Negative, predictCART)
+table
+
+# Accuracy
+accuracy = (table[1,1]+table[2,2])/sum(table)
+accuracy
+
+# Baseline accuracy 
+table(testSparse$Negative)
+300/(300+55)
+```
+
+## Random Forest Model
+```{r cache=TRUE}
+set.seed(123)
+tweetRF = randomForest(Negative ~ ., data=trainSparse)
+
+# Make predictions:
+predictRF = predict(tweetRF, newdata=testSparse)
+
+table2 = table(testSparse$Negative, predictRF)
+table2
+
+# Accuracy:
+accuracy2 = (table2[1,1]+table2[2,2])/sum(table2)
+accuracy2
+```
+
+This tells us it's better than CART model but due to the interpretability of our CART model,
+I'd probably prefer it over the random forest model. If you were to use cross-validation to pick the cp parameter for the CART model, the accuracy would increase to about the same as the random forest model.  
+So by using a bag-of-words approach and these models, we can reasonably predict sentiment even
+with a relatively small data set of tweets.
+
+# Logistic regression model
+```{r cache=TRUE}
+model = glm(Negative~., data=trainSparse, family=binomial)
+pred = predict(model, newdata=testSparse, type="response")
+table3 = table(testSparse$Negative, pred >= 0.5 ) 
+table3
+
+# Accuracy
+accuracy3 = (table3[1,1]+table3[2,2])/sum(table3)
+accuracy3
+```
+

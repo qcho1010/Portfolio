@@ -1,0 +1,54 @@
+PYSPARK_DRIVER_PYTHON=ipython pyspark
+First of all open the pyspark shell and load the datasets you created for the previous assignment from HDFS:
+
+fileA = sc.textFile("input/join1_FileA.txt")
+Let's make sure the file content is correct:
+
+fileA.collect()
+should return:
+
+Out[]: [u'able,991', u'about,11', u'burger,15', u'actor,22']
+Then load the second dataset:
+
+fileB = sc.textFile("input/join1_FileB.txt")
+same verification:
+
+fileB.collect()
+Out[29]: 
+[u'Jan-01 able,5',
+ u'Feb-02 about,3',
+ u'Mar-03 about,8 ',
+ u'Apr-04 able,13',
+ u'Feb-22 actor,3',
+ u'Feb-23 burger,5',
+ u'Mar-08 burger,2',
+ u'Dec-15 able,100']
+
+Mapper for fileA
+First you need to create a map function for fileA that takes a line, splits it on the comma and turns the count to an integer.
+
+You need to copy paste the following function into the pyspark console, then edit the 2 <ENTER_CODE_HERE> lines to perform the necessary operations:
+
+def split_fileA(line):
+    # split the input line in word and count on the comma
+    <ENTER_CODE_HERE>
+    # turn the count to an integer  
+    <ENTER_CODE_HERE>
+    return (word, count)
+You can test your function by defining a test variable:
+
+test_line = "able,991"
+and make sure that:
+
+split_fileA(test_line)
+returns:
+
+Out[]: ('able', 991)
+Now we can proceed on running the map transformation to the fileA RDD:
+
+fileA_data = fileA.map(split_fileA)
+If the mapper is implemented correctly, you should get this result:
+
+fileA_data.collect()
+Out[]: [(u'able', 991), (u'about', 11), (u'burger', 15), (u'actor', 22)]
+Make sure that the key of each pair is a string (i.e. is delimited by ' ' ) and the value is an integer.

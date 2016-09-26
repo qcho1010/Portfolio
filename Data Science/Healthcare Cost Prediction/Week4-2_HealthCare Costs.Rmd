@@ -1,0 +1,132 @@
+---
+title: "Week4-2"
+author: "Kyu Cho"
+date: "Tuesday, June 30, 2015"
+output: html_document
+---
+```{r cache=TRUE}
+library(rpart)
+library(rpart.plot)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data4")
+Claims = read.csv("ClaimsData.csv")
+summary(Claims)
+str(Claims)
+```
+These cost buckets are defined using the thresholds determined by D2Hawkeye. So the first cost bucket contains patients with costs less than $3,000, the second cost bucket contains patients with costs between $3,000 and $8,000, and so on.
+
+We can verify that the number of patients in each cost bucket has the same structure as what we saw for D2Hawkeye by computing the percentage of patients in each cost bucket.
+
+```{r cache=TRUE}
+table(Claims$bucket2009)/nrow(Claims)
+```
+
+The first cost bucket has almost 70% of the patients.  
+The second cost bucket has about 20% of the patients.  
+And the remaining 10% are split between the final three cost buckets.  
+So the vast majority of patients in this data set have low cost.  
+
+Our goal will be to predict the cost bucket the patient fell into in 2009 using a CART model.  
+
+# Spliting the data
+```{r cache=TRUE}
+library(caTools)
+set.seed(88)
+spl = sample.split(Claims$bucket2009, SplitRatio = 0.6)
+ClaimsTrain = subset(Claims, spl==TRUE)
+ClaimsTest = subset(Claims, spl==FALSE)
+
+# Average age of patients in the training set
+mean(ClaimsTrain$age)
+
+# Proportion of people in the training set (ClaimsTrain) had at least one diagnosis code for diabetes.
+sum(ClaimsTrain$diabetes)/nrow(ClaimsTrain)
+```
+
+# Build smart baseline
+The baseline method would predict that the cost bucket for a patient in 2009 will be the same as it was in 2008.
+```{r cache=TRUE}
+# First = output data, Second = prediction
+table(ClaimsTest$bucket2009, ClaimsTest$bucket2008)
+```
+The accuracy is the sum of the diagonal, the observations that were classified correctly, divided by the total number of observations in our test set.
+```{r cache=TRUE}
+# Accuracy
+(110138 + 10721 + 2774 + 1539 + 104)/nrow(ClaimsTest)
+
+# Penalty error
+# Left = actual outcomes,  Top = predicted outcomes
+PenaltyMatrix = matrix(c(0,1,2,3,4,2,0,1,2,3,4,2,0,1,2,6,4,2,0,1,8,6,4,2,0), byrow=TRUE, nrow=5)
+PenaltyMatrix
+```
+The elements in the matrix represents the Penalty error which is calculated by actual outcomes - predicted outcome.  
+We know that the worst outcomes are when we predict a low cost bucket, but the actual outcome is a high cost bucket. We still give ourselves a penalty.  
+When we predict a high cost bucket and it's actually a low cost bucket, but it's not as bad.  
+
+So now to compute the penalty error of the baseline method, we need to multiply our classification matrix by the penalty matrix.  
+Use as.matrix to convert it to a matrix so that we can multiply it by our penalty matrix.  
+```{r cache=TRUE}
+# Penalty Error of Baseline Method
+as.matrix(table(ClaimsTest$bucket2009, ClaimsTest$bucket2008))*PenaltyMatrix
+sum(as.matrix(table(ClaimsTest$bucket2009, ClaimsTest$bucket2008))*PenaltyMatrix)/nrow(ClaimsTest)
+```
+So the penalty error for the baseline method is 0.74.  
+
+We can impove the CART model that has an accuracy higher than 68% and a panalty error lower than .74 
+
+# Modify the baseline
+
+Let's use the baseline method of predicting the most frequent outcome for all observations.  
+This new baseline method would predict cost bucket 1 for everyone.  
+What would the accuracy of this baseline method be on the test set?  
+```{r cache=TRUE}
+# To compute the accuracy, you can create a table of the variable ClaimsTest$bucket2009:
+table(ClaimsTest$bucket2009)
+
+# According to the table output, this baseline method would get 122978 observations correct, and all other observations wrong. So the accuracy of this baseline method is 
+122978/nrow(ClaimsTest)
+
+# For the penalty error, since this baseline method predicts 1 for all observations, it would have a penalty error of:
+(0*122978 + 2*34840 + 4*16390 + 6*7937 + 8*1057)/nrow(ClaimsTest)
+```
+
+# Build cart model
+```{r cache=TRUE}
+# CART model
+ClaimsTree = rpart(bucket2009~age+alzheimers+arthritis+cancer+copd+depression+diabetes+heart.failure+ihd+kidney+osteoporosis+stroke+bucket2008+reimbursement2008, data=ClaimsTrain, method="class", cp=0.00005)
+prp(ClaimsTree)
+
+
+# Make predictions
+PredictTest = predict(ClaimsTree, newdata = ClaimsTest, type = "class")
+table(ClaimsTest$bucket2009, PredictTest)
+
+# Accuracy
+(114141 + 16102 + 118 + 201 + 0)/nrow(ClaimsTest)
+
+# Penalty error
+as.matrix(table(ClaimsTest$bucket2009, PredictTest))*PenaltyMatrix
+sum(as.matrix(table(ClaimsTest$bucket2009, PredictTest))*PenaltyMatrix)/nrow(ClaimsTest)
+```
+
+had an accuracy of 68% and a penalty error of 0.74. So while we increased the accuracy,the penalty error also went up. Why?
+By default, rpart will try to maximize the overall accuracy, and every type of error is seen as having a penalty of one. Our CART model predicts 3, 4, and 5 so rarely because there are very few observations in these classes. So we don't really expect this model to do better on the penalty error than the baseline method. So how can we fix this?  
+The rpart function allows us to specify a parameter called loss. This is the penalty matrix we want to use when building our model.
+
+```{r cache=TRUE}
+
+# New CART model with loss matrix
+ClaimsTree = rpart(bucket2009~age+alzheimers+arthritis+cancer+copd+depression+diabetes+heart.failure+ihd+kidney+osteoporosis+stroke+bucket2008+reimbursement2008, data=ClaimsTrain, method="class", cp=0.00005, parms=list(loss=PenaltyMatrix))
+
+# Redo predictions and penalty error
+PredictTest = predict(ClaimsTree, newdata = ClaimsTest, type = "class")
+table(ClaimsTest$bucket2009, PredictTest)
+
+# Accuracy
+(94310 + 18942 + 4692 + 636 + 2)/nrow(ClaimsTest)
+sum(as.matrix(table(ClaimsTest$bucket2009, PredictTest))*PenaltyMatrix)/nrow(ClaimsTest)
+```
+So the penalty error of our new model is 0.642.  Our accuracy is now lower than the baseline method,
+but our penalty error is also much lower.  Note that we have significantly fewer independent variables
+than D2Hawkeye had.  If we had the hundreds of codes and risk factors  available to D2Hawkeye, we would hopefully do even better.
+

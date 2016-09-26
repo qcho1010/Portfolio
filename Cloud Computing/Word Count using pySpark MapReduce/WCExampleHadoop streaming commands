@@ -1,0 +1,31 @@
+chmod +x wordcount_mapper.py
+chmod +x wordcount_reducer.py 
+
+echo "A long time ago in a galaxy far far away" > /home/cloudera/testfile1
+  330  echo "Another episode of Star Wars" > /home/cloudera/testfile2
+  331  hdfs dfs -ls
+  332  hdfs dfs -ls /input
+  333  hdfs dfs -ls /user/cloudera/input
+  334  hdfs dfs -cat /user/cloudera/input/testfile1
+  335  mv testfile1 testfile1wc
+  336  mv testfile2 testfile2wc
+  337  hdfs dfs -put /home/cloudera/testfile1wc /user/cloudera/input
+  338  hdfs dfs -put /home/cloudera/testfile2wc /user/cloudera/input
+  339  hdfs dfs -ls /user/cloudera/input
+  340  hdfs dfs -rm /user/cloudera/input/testfile1 
+  341  hdfs dfs -rm /user/cloudera/input/testfile2
+  342  hadoop jar /usr/lib/hadoop-mapreduce/hadoop-streaming.jar \-input /user/cloudera/input \
+  343  hadoop jar /usr/lib/hadoop-mapreduce/hadoop-streaming.jar -input /user/cloudera/input -output /user/cloudera/output_new -mapper /home/cloudera/wordcount_mapper.py -reducer /home/cloudera/wordcount_reducer.py 
+  344  hdfs dfs -cat /user/cloudera/output_new/part-r-00000
+  345  hdfs dfs -ls /user/cloudera/output_new 
+  346  hdfs dfs -cat /user/cloudera/output_new/part-r-00000
+  347  hdfs dfs -cat /user/cloudera/output_new/part-00000
+  348  hadoop jar /usr/lib/hadoop-mapreduce/hadoop-streaming.jar -input /user/cloudera/input -output /user/cloudera/output_new_0 -mapper /home/cloudera/wordcount_mapper.py -reducer /home/cloudera/wordcount_reducer.py -numReduceTasks 0
+  349  hdfs dfs -getmerge /user/cloudera/output_new_0/* wordcount_num0_output.txt
+  350  vim wordcount_num0_output.txt 
+  351  hadoop jar /usr/lib/hadoop-mapreduce/hadoop-streaming.jar -input /user/cloudera/input -output /user/cloudera/output_new_2 -mapper /home/cloudera/wordcount_mapper.py -reducer /home/cloudera/wordcount_reducer.py -numReduceTasks 2
+  352  hdfs dfs -getmerge /user/cloudera/output_new_2/* wordcount_num2_output.txt
+  353  vim wordcount_num2_output.txt 
+  354  ls -lrt
+  355  hdfs dfs -getmerge /user/cloudera/output_new/* wordcount_output.txt
+

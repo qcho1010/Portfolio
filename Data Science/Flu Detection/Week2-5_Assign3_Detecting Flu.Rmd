@@ -1,0 +1,114 @@
+---
+title: "Week2-5_Assign3_Detecting Flu epidemic via search engine query data"
+author: "Kyu Cho"
+date: "Wednesday, June 17, 2015"
+output: html_document
+---
+#Introduction
+Flu epidemics constitute a major public health concern causing respiratory illnesses, hospitalizations, and deaths. According to the National Vital Statistics Reports published in October 2012, influenza ranked as the eighth leading cause of death in 2011 in the United States. Each year, 250,000 to 500,000 deaths are attributed to influenza related diseases throughout the world.  
+
+The U.S. Centers for Disease Control and Prevention (CDC) and the European Influenza Surveillance Scheme (EISS) detect influenza activity through virologic and clinical data, including Influenza-like Illness (ILI) physician visits. Reporting national and regional data, however, are published with a 1-2 week lag. 
+
+The Google Flu Trends project was initiated to see if faster reporting can be made possible by considering flu-related online search queries -- data that is available almost immediately.  
+
+#Variables
+We would like to estimate influenza-like illness (ILI) activity using Google web search logs. Fortunately, one can easily access this data online:
+
+ - ILI Data: The CDC publishes on its website the official regional and state-level percentage of patient visits to healthcare providers for ILI purposes on a weekly basis.
+ - Google Search Queries: Google Trends allows public retrieval of weekly counts for every query searched by users around the world. For each location, the counts are normalized by dividing the count for each query in a particular week by the total number of online search queries submitted in that location during the week. Then, the values are adjusted to be between 0 and 1.
+ - Week: The range of dates represented by this observation, in year/month/day format.
+ - ILI: This column lists the percentage of ILI-related physician visits for the corresponding week.
+ - Queries: This column lists the fraction of queries that are ILI-related for the corresponding week, adjusted to be between 0 and 1 (higher values correspond to more ILI-related search queries).
+
+```{r cache=TRUE}
+setwd("D:/Google Drive/College/4-The Analytics Edge/data2")
+FluTrain <- read.csv("FluTrain.csv")
+FluTest = read.csv("FluTest.csv")
+str(FluTrain)
+hist(FluTrain$ILI)
+```
+
+When handling a skewed dependent variable, it is often useful to predict the logarithm of the dependent variable instead of the dependent variable itself -- this prevents the small number of unusually large or small observations from having an undue influence on the sum of squared errors of predictive models. In this problem, we will predict the natural log of the ILI variable, which can be computed in R using the log() function.  
+```{r cache=TRUE}
+# Plot the natural logarithm of ILI versus Queries. 
+plot(FluTrain$Queries ,log(FluTrain$ILI))
+```
+
+# LINEAR REGRESSION MODEL  
+Based on the plot we just made, it seems that a linear regression model could be a good modeling choice.  
+```{r cache=TRUE}
+FluTrend1 = lm(log(ILI) ~ Queries, data=FluTrain)
+summary(FluTrend1)
+```
+
+For a single variable linear regression model, there is a direct relationship between the R-squared and the correlation between the independent and the dependent variables. What is the relationship we infer from our problem?  
+R-squared = Correlation^2  
+```{r cache=TRUE}
+COR = cor(log(FluTrain$ILI), FluTrain$Queries)
+R2 = COR^2
+```
+
+# PROBLEM 3.1 - PERFORMANCE ON THE TEST SET
+```{r cache=TRUE}
+PredTest1 = exp(predict(FluTrend1, newdata=FluTest))
+summary(PredTest1)
+```
+
+What is our estimate for the percentage of ILI-related physician visits for the week of March 11, 2012?  
+```{r cache=TRUE}
+PredTest1[11]
+```
+
+What is the relative error betweeen the estimate (our prediction) and the observed value for the week of March 11, 2012?  
+```{r cache=TRUE}
+RE1 = (FluTest$ILI[11] - PredTest1[11])/FluTest$ILI[11]
+RE1
+```
+
+What is the Root Mean Square Error (RMSE) between our estimates and the actual observations for the percentage of ILI-related physician visits, on the test set?  
+```{r cache=TRUE}
+SSE1 = sum((PredTest1 - FluTest$ILI)^2)
+RMSE1 = sqrt(SSE1/nrow(FluTest))
+RMSE1
+```
+
+#TRAINING A TIME SERIES MODEL
+The observations in this dataset are consecutive weekly measurements of the dependent and independent variables. This sort of dataset is called a "time series." Often, statistical models can be improved by predicting the current value of the dependent variable using the value of the dependent variable from earlier weeks. In our models, this means we will predict the ILI variable in the current week using values of the ILI variable from previous weeks.  
+
+First, we need to decide the amount of time to lag the observations. Because the ILI variable is reported with a 1- or 2-week lag, a decision maker cannot rely on the previous week's ILI value to predict the current week's value. Instead, the decision maker will only have data available from 2 or more weeks ago. We will build a variable called ILILag2 that contains the ILI value from 2 weeks before the current observation.  
+
+```{r cache=TRUE}
+library(zoo)
+
+# In these commands, the value of -2 passed to lag means to return 2 observations before the current one; a positive value would have returned future observations.  
+#  The parameter na.pad=TRUE means to add missing values for the first two weeks of our dataset, where we can't compute the data from 2 weeks earlier.
+ILILag2 = lag(zoo(FluTrain$ILI), -2, na.pad=TRUE)
+FluTrain$ILILag2 = coredata(ILILag2)
+summary(FluTrain)
+
+plot(log(FluTrain$ILI), log(FluTrain$ILILag2))
+FluTrend2 = lm(log(ILI) ~ log(ILILag2) + Queries, data = FluTrain)
+summary(FluTrend2)
+summary(FluTrend1)
+
+```
+
+#VALUATING THE TIME SERIES MODEL IN THE TEST SET
+```{r cache=TRUE}
+ILILag2 = lag(zoo(FluTest$ILI), -2, na.pad=TRUE)
+FluTest$ILILag2 = coredata(ILILag2)
+summary(FluTest)
+
+# Fill in the missing values for ILILag2 in FluTest.
+FluTest$ILILag2[1] = FluTrain$ILI[nrow(FluTrain)-1]
+FluTest$ILILag2[2] = FluTrain$ILI[nrow(FluTrain)]
+FluTest$ILILag2[1]
+FluTest$ILILag2[2]
+```
+
+```{r cache=TRUE}
+PredTest2 = exp(predict(FluTrend2, newdata=FluTest))
+SSE2 = sum((PredTest2 - FluTest$ILI)^2)
+RMSE2 = sqrt(SSE2/nrow(FluTest))
+```
+

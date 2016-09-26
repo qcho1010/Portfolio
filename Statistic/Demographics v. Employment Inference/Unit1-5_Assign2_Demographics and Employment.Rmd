@@ -1,0 +1,124 @@
+---
+title: "Unit1-5_Assign2_Demographics and Employment"
+author: "Kyu Cho"
+date: "Friday, June 12, 2015"
+output: html_document
+---
+#Introduction
+In the wake of the Great Recession of 2009, there has been a good deal of focus on employment statistics, one of the most important metrics policymakers use to gauge the overall strength of the economy. In the United States, the government measures unemployment using the Current Population Survey (CPS), which collects demographic and employment information from a wide range of Americans each month. In this exercise, we will employ the topics reviewed in the lectures as well as a few new techniques using the September 2013 version of this rich, nationally representative dataset (available online).
+
+#Variables
+- PeopleInHousehold: The number of people in the interviewee's household.
+- Region: The census region where the interviewee lives.
+- State: The state where the interviewee lives.
+- MetroAreaCode: A code that identifies the metropolitan area in which the interviewee lives (missing if the interviewee does not live in a metropolitan area). The mapping from codes to names of metropolitan areas is provided in the file MetroAreaCodes.csv.
+- Age: The age, in years, of the interviewee. 80 represents people aged 80-84, and 85 represents people aged 85 and higher.
+- Married: The marriage status of the interviewee.
+- Sex: The sex of the interviewee.
+- Education: The maximum level of education obtained by the interviewee.
+- Race: The race of the interviewee.
+- Hispanic: Whether the interviewee is of Hispanic ethnicity.
+- CountryOfBirthCode: A code identifying the country of birth of the interviewee. The mapping from codes to names of countries is provided in the file CountryCodes.csv.
+- Citizenship: The United States citizenship status of the interviewee.
+- EmploymentStatus: The status of employment of the interviewee.
+- Industry: The industry of employment of the interviewee (only available if they are employed).
+
+#Loading Data and Descriptive Statistics
+```{r cache=TRUE}
+# Set the directory at where the data is located
+setwd("D:/Google Drive/College/4-The Analytics Edge/data/")
+
+# Read the Data
+CPS <- read.csv("CPSData.csv")
+MetroAreaMap <- read.csv("MetroAreaCodes.csv")
+CountryMap <- read.csv("CountryCodes.csv")
+str(CPS)
+```
+
+Among the interviewees with a value reported for the Industry variable, what is the most common industry of employment?  
+```{r cache=TRUE}
+sort(which.max(table(CPS$Industry)))
+```
+
+Which state has the fewest interviewees?  
+Which state has the largest number of interviewees?  
+```{r cache=TRUE}
+sort(which.min(table(CPS$State)))
+sort(which.max(table(CPS$State)))
+```
+
+What proportion of interviewees are citizens of the United States?  
+```{r cache=TRUE}
+table(CPS$Citizenship)
+citizen <- CPS[CPS$Citizenship=="Citizen, Native" | CPS$Citizenship=="Citizen, Naturalized",]
+nrow(citizen)/nrow(CPS)
+```
+
+The CPS differentiates between race (with possible values American Indian, Asian, Black, Pacific Islander, White, or Multiracial) and ethnicity. A number of interviewees are of Hispanic ethnicity, as captured by the Hispanic variable. For which races are there at least 250 interviewees in the CPS dataset of Hispanic ethnicity?   
+```{r cache=TRUE}
+table(CPS$Race, CPS$Hispanic)
+```
+
+Which region of the United States has the largest proportion of interviewees living in a non-metropolitan area?
+
+```{r cache=TRUE}
+table(CPS$Region, is.na(CPS$MetroAreaCode))
+```
+
+Which state has a proportion of interviewees living in a non-metropolitan area closest to 30%?  
+```{r cache=TRUE}
+sort(round(tapply(is.na(CPS$MetroAreaCode), CPS$State , mean)*100, 2))
+```
+
+
+#INTEGRATING METROPOLITAN AREA DATA
+```{r cache=TRUE}
+head(MetroAreaMap)
+CPS = merge(CPS, MetroAreaMap, by.x="MetroAreaCode", by.y="Code", all.x=TRUE)
+head(CPS)
+```
+
+Which of the following metropolitan areas has the largest number of interviewees?
+```{r cache=TRUE}
+which.max(sort(table(CPS$MetroArea)))
+```
+
+Which metropolitan area has the highest proportion of interviewees of Hispanic ethnicity?  
+```{r cache=TRUE}
+which.max(tapply(CPS$Hispanic, CPS$MetroArea, mean))
+```
+
+Determine the number of metropolitan areas in the United States from which at least 20% of interviewees are Asian.
+```{r cache=TRUE}
+which(tapply(CPS$Race=="Asian", CPS$MetroArea, mean) > 0.2)
+```
+
+Which metropolitan area has the smallest proportion of interviewees who have received no high school diploma.  
+```{r cache=TRUE}
+which.min(tapply(CPS$Education == "No high school diploma", CPS$MetroArea, mean, na.rm=T))
+```
+
+# INTEGRATING COUNTRY OF BIRTH DATA
+```{r cache=TRUE}
+head(CountryMap)
+CPS<- merge(CPS, CountryMap, by.x="CountryOfBirthCode", by.y="Code", all.x=TRUE)
+```
+
+Among all interviewees born outside of North America, which country was the most common place of birth?  
+```{r cache=TRUE}
+tail(sort(table(CPS$Country)))
+```
+
+```{r cache=TRUE}
+tapply(CPS$MetroArea == "New York-Northern New Jersey-Long Island, NY-NJ-PA", CPS$Country != "United States", sum, na.rm=TRUE)
+# or
+table(CPS$MetroArea == "New York-Northern New Jersey-Long Island, NY-NJ-PA", CPS$Country != "United States")
+```
+
+Which metropolitan area has the largest number (note -- not proportion) of interviewees with a country of birth in India, Brazil, and Somalia
+```{r cache=TRUE}
+which.max(tapply(CPS$Country == "India", CPS$MetroArea, sum, na.rm=TRUE))
+which.max(tapply(CPS$Country == "Brazil", CPS$MetroArea, sum, na.rm=TRUE))
+which.max(tapply(CPS$Country == "Somalia", CPS$MetroArea, sum, na.rm=TRUE))
+```
+

@@ -1,0 +1,213 @@
+---
+title: "Unit1-3 Assign1_Analytical Detective"
+author: "Kyu Cho"
+date: "Wednesday, June 10, 2015"
+output: html_document
+---
+#Introduction
+Crime is an international concern, but it is documented and handled in very different ways in different countries. In the United States, violent crimes and property crimes are recorded by the Federal Bureau of Investigation (FBI). Additionally, each city documents crime, and some cities release data regarding crime rates. The city of Chicag, Illinois releases crime data from 2001 onward online. Chicago is the third most populous city in the United States, with a population of over 2.7 million people.
+
+There are two main types of crimes: violent crimes, and property crimes. In this proble, we'll focus on one specific type of property crime, called "motor vehicle theft" (sometimes referred to as grand theft auto). This is the act of stealing, or attempting to steal, a car. In this problem, we'll use some basic data analysis in R to understand the motor vehicle thefts in Chicago.
+
+#Variables
+- ID: a unique identifier for each observation
+- Date: the date the crime occurred
+- LocationDescription: the location where the crime occurred
+- Arrest: whether or not an arrest was made for the crime (TRUE if an arrest was made, and FALSE if an arrest was not made)
+- Domestic: whether or not the crime was a domestic crime, meaning that it was committed against a family member (TRUE if it was domestic, and FALSE if it was not domestic)
+- Beat: the area, or "beat" in which the crime occurred. This is the smallest regional division defined by the Chicago police department.
+- District: the police district in which the crime occured. Each district is composed of many beats, and are defined by the Chicago Police Department.
+- CommunityArea: the community area in which the crime occurred. Since the 1920s, Chicago has been divided into what are called "community areas", of which there are now 77. The community areas were devised in an attempt to create socially homogeneous regions.
+- Year: the year in which the crime occurred.
+- Latitude: the latitude of the location at which the crime occurred.
+- Longitude: the longitude of the location at which the crime occurred.
+
+#LOADING THE DATA
+How many rows of data (observations) are in this dataset?
+How many variables are in this dataset?
+
+```{r cache = TRUE}
+FBI <- read.csv("D:/Google Drive/College/4-The Analytics Edge/data/mvtWeek1.csv")
+str(FBI)
+summary(FBI)
+```
+
+Using the "max" function, what is the maximum value of the variable "ID"?
+```{r cache = TRUE}
+which.max(FBI$ID)
+FBI$ID[18134]
+```
+
+What is the minimum value of the variable "Beat"?
+```{r cache = TRUE}
+which.min(FBI$Beat)
+FBI$Beat[4756]
+```
+
+How many observations have value TRUE in the Arrest variable (this is the number of crimes for which an arrest was made)?
+```{r cache = TRUE}
+table(FBI$Arrest)
+```
+
+How many observations have a LocationDescription value of ALLEY?
+```{r cache = TRUE}
+r <- subset(FBI, LocationDescription == "ALLEY")
+head(r)
+nrow(r)
+```
+
+#UNDERSTANDING DATES IN R  
+Now, let's convert these characters into a Date object in R. In your R console.
+What is the month and year of the median date in our dataset? 
+```{r cache = TRUE}
+DateConvert = as.Date(strptime(FBI$Date, "%m/%d/%y %H:%M"))
+summary(DateConvert)
+```
+
+```{r cache = TRUE}
+# Add variables
+FBI$Date = DateConvert
+FBI$Month = months(DateConvert)
+FBI$Weekday = weekdays(DateConvert)
+```
+
+In which month did the fewest motor vehicle thefts occur?
+```{r cache = TRUE}
+table(FBI$Month)
+```
+
+On which weekday did the most motor vehicle thefts occur?
+```{r cache = TRUE}
+table(FBI$Weekday)
+```
+
+Which month has the largest number of motor vehicle thefts for which an arrest was made?
+```{r cache = TRUE}
+tapply(FBI$Arrest, FBI$Month, sum)
+
+# Another method
+table(FBI$Arrest, FBI$Month)[2,]
+```
+
+#VISUALIZING CRIME TRENDS
+```{r cache = TRUE}
+hist(FBI$Date, breaks=100)
+boxplot(FBI$Date ~ FBI$Arrest)
+```
+
+For what proportion of motor vehicle thefts in 2001, 2007 and 2012 was an arrest made?
+```{r cache = TRUE}
+sum(FBI$Year==2001 & FBI$Arrest=="TRUE")/sum(FBI$Year==2001)
+sum(FBI$Year==2007 & FBI$Arrest=="TRUE")/sum(FBI$Year==2007)
+sum(FBI$Year==2012 & FBI$Arrest=="TRUE")/sum(FBI$Year==2012)
+```
+
+#POPULAR LOCATIONS
+Find the top five locations where motor vehicle thefts occur.
+```{r cache = TRUE}
+sort(table(FBI$LocationDescription))[73:78]
+```
+
+How many observations are in Top5?
+```{r cache = TRUE}
+TopLocations <- c("STREET", "PARKING LOT/GARAGE(NON.RESID.)", "ALLEY", "GAS STATION", "DRIVEWAY - RESIDENTIAL")
+Top5 <- subset(FBI, LocationDescription %in% TopLocations)
+
+# Second method
+Top5 = subset(FBI, LocationDescription=="STREET" | LocationDescription=="PARKING LOT/GARAGE(NON.RESID.)" | LocationDescription=="ALLEY" | LocationDescription=="GAS STATION" | LocationDescription=="DRIVEWAY - RESIDENTIAL")
+
+str(Top5$LocationDescription)
+
+# Remove empty LocationDescription
+Top5$LocationDescription = factor(Top5$LocationDescription)
+str(Top5$LocationDescription)
+```
+
+One of the locations has a much higher arrest rate than the other locations. Which is it? 
+```{r cache = TRUE}
+table(Top5$LocationDescription, Top5$Arrest)
+```
+Now, calculate the arrest percentage by sum(arrest)/sum(total arrest).
+It ends of with GAS STATION has hightest arrest rate with 20.8%.
+
+## Manipulating the data
+This is the second method. It's more complicated but cleaning the data helps to use it for another purpose.
+Now make it clean data frame with percentage
+```{r cache = TRUE}
+# Convert table into data frame
+DF <- as.data.frame(table(Top5$LocationDescription, Top5$Arrest))
+DF
+
+# Create table to get the total number of Arrest
+totalT <- table(Top5$LocationDescription)
+totalT
+
+# Convert the table into data frame  
+totalDF <- as.data.frame(totalT)
+totalDF
+
+# Extract second elt. and repeat 2 times
+numOnlyDF <- rep(totalDF[,2],2)
+numOnlyDF
+
+# Combind two data frame
+FinalDF <- data.frame(DF, numOnlyDF)
+FinalDF
+
+# Add rate variable and label them
+FinalDF$Rate <- round(FinalDF$Freq / FinalDF$numOnlyDF, 3)*100
+colnames(FinalDF)[1] = "Location"
+colnames(FinalDF)[2] = "Arrest"
+colnames(FinalDF)[4] = "Total"
+FinalDF
+
+# Subsetting TRUE value only
+FinalSubset <- subset(FinalDF, Arrest == "TRUE")
+#or
+FinalSubset <- FinalDF[FinalDF$Arrest == TRUE,]
+
+# Order the subset data in descending order
+FinalSubset <- FinalSubset[order(-FinalSubset$Rate),]
+FinalSubset
+```
+
+On which day of the week do the most motor vehicle thefts at gas stations happen?
+```{r cache = TRUE}
+table(Top5$LocationDescription, Top5$Weekday)
+
+# clean more data set
+df <- as.data.frame(table(Top5$LocationDescription, Top5$Weekday))
+subsetDF <- subset(df, Var1 == "GAS STATION")
+subsetDF
+which.max(subsetDF$Freq)
+subsetDF$Var2[3]
+```
+
+
+**Problem**  
+There isn't any clear report regards to the scrim rate, arrest rate, etc.  
+**Objective**  
+Create the clean report about the most frequent places for the scrim.  
+**Possible Methods**  
+plot, hist, boxplot, data manipulating technique.  
+**Actual Method Used**  
+Simple, data manipulating technique.  
+rep(), as.data.frame(), subset(), factor(), etc.  
+**Procedure**  
+Understand the data  
+Clean the  data  
+Manipulate the data  
+**Facts Discovered**  
+- Only 8% arrest rate in general, during 2012, it shows only 3% arrest rate  
+- The largest thefts occur in October, the fewest thefts occur in February  
+- The largest arrest occur in December, the fewest arrest occur in May  
+- The number of theft is gradually decreasing over the year  
+- Most of time, the crime is placed in the street.  
+- Gas station has the highest arrest rate of 20.8%, and it occurs the most frequently on Saturday.  
+**Possible Improvement**  
+Use the report to create the clean plots  
+**Business Perspective**  
+Since, the report shows the highest arrest rate in the gas station, we can investigate to find the elements those are helping to increase the arrest rate, then see if we can apply those into the most frequent crime area which is the street.  
+
+
+

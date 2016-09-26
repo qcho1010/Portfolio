@@ -1,0 +1,2200 @@
+head	1.18;
+access;
+symbols;
+locks
+	o2-cho:1.18; strict;
+comment	@ * @;
+
+
+1.18
+date	2016.04.30.02.35.16;	author o2-cho;	state Exp;
+branches;
+next	1.17;
+
+1.17
+date	2016.04.30.02.31.20;	author o2-cho;	state Exp;
+branches;
+next	1.16;
+
+1.16
+date	2016.04.30.02.27.19;	author o2-cho;	state Exp;
+branches;
+next	1.15;
+
+1.15
+date	2016.04.29.22.39.37;	author o2-cho;	state Exp;
+branches;
+next	1.14;
+
+1.14
+date	2016.04.29.17.45.37;	author o2-cho;	state Exp;
+branches;
+next	1.13;
+
+1.13
+date	2016.04.29.17.19.15;	author o2-cho;	state Exp;
+branches;
+next	1.12;
+
+1.12
+date	2016.04.29.03.34.58;	author o2-cho;	state Exp;
+branches;
+next	1.11;
+
+1.11
+date	2016.04.29.03.14.46;	author o2-cho;	state Exp;
+branches;
+next	1.10;
+
+1.10
+date	2016.04.28.18.55.31;	author o2-cho;	state Exp;
+branches;
+next	1.9;
+
+1.9
+date	2016.04.27.20.35.48;	author o2-cho;	state Exp;
+branches;
+next	1.8;
+
+1.8
+date	2016.04.26.16.44.42;	author o2-cho;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2016.04.26.16.00.50;	author o2-cho;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2016.04.25.18.17.07;	author o2-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2016.04.24.17.25.30;	author o2-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2016.04.24.15.29.31;	author o2-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2016.04.23.20.02.55;	author o2-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2016.04.23.15.45.42;	author o2-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2016.04.19.17.51.43;	author o2-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@Initial skeleton program
+@
+
+
+1.18
+log
+@Release candidate 3
+@
+text
+@// RCS DATA AT BOTTOM OF FILE
+
+
+#include <stdio.h>                               // printf()
+#include <stdlib.h>                              // exit()
+#include <time.h>                                // time()
+#include <wait.h>                                // wait()
+#include <unistd.h>                              // sleep(), etc.
+#include <errno.h>                               // perror()
+#include <sys/ipc.h>                             // Inter-process communication
+#include <sys/shm.h>                             // Shared memory
+#include <sys/sem.h>                             // Semaphores
+#include "ipc_data.h"                            // IPC Data structure
+#include "writelog.h"                            // Log writer
+#include "semops.h"                              // Semaphore operations
+#include "sigcheck.h"                            // Signal processing
+#include "adv_clock.h"                           // Clock advancement
+
+
+#define DEBUGM 0                                 // Enable debugging = 1
+#define IPCD_SZ sizeof(ipcd_t)                   // Size of the IPC data structure
+
+
+// Global variables
+int shmid_ipcd;                                  // Shared memory ID
+ipcd_t *ipcd;                                    // Pointer for shared memory
+int semid_clock;                                 // Semaphore ID for logical clock
+int semid_memref[CHILD_MAX];                     // Semaphores for each child for memory references
+char msgerr[50] = "";                            // Hold a message to be passed to perror() or writelog()
+int child_pid[CHILD_MAX] = { 0 };                // Array of PIDs for child processes
+int CHILD_RUN;                                   // Actual number of children to run
+int wait_queue[CHILD_MAX];                       // Queue for processes waiting on page swap
+int access_time[CHILD_MAX];                      // Hold effective memory access time for each process
+unsigned int system_mem[8];                      // System memory allocation vectors
+unsigned int mask;                               // Bitmask operator
+unsigned int max_mask = 4294967295;              // Bitmask operator
+int expnt;                                       // Exponent operator
+int page;                                        // Temporary page calculator
+int temp;                                        // Temporary page holder
+int section;                                     // System memory section
+short page_queue[CHILD_MAX][MAX_CHILD_MEM];      // Child FIFO page queues
+
+
+// Function declarations/definitions
+
+// Declaration for children counting function defined below
+int count_children();
+
+int term_proc(int child, int sig) {
+    int status;                                  // Hold status from wait()
+
+    sprintf(msgerr, "Attempting to terminate child %02d (PID %d)", child, child_pid[child]);
+    if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+    writelog(msgerr, "oss");
+
+    kill(child_pid[child], sig);
+    waitpid(child_pid[child], &status, WCONTINUED);
+
+    sprintf(msgerr, "Child %02d returned %d", child, WEXITSTATUS(status));
+    if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+    writelog(msgerr, "oss");
+
+    return WEXITSTATUS(status);
+}
+
+// Terminate all descendant processes and free shared memory
+void cleanup(int termsig) {
+
+    writelog("Executing cleanup()", "oss");
+
+    // Terminate children
+    int i;
+    for (i = 0; i < CHILD_RUN; i++) {
+        if ( ipcd->child_running[i] != 0 ) {
+            if ( term_proc(i, termsig) != 0 ) {
+                sprintf(msgerr, "There was an issue terminating child %02d", i);
+                if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                writelog(msgerr, "oss");
+            }
+        }
+    }
+
+    // Release shared memory
+    int ipcd_ret = shmctl(shmid_ipcd, IPC_RMID, (struct shmid_ds *)NULL);
+    if (ipcd_ret != 0) fprintf(stderr, "Error releasing shared memory - please clear manually\n");
+    else writelog("Released shared memory successfully", "oss");
+
+    // Remove clock semaphore
+    if ((semctl(semid_clock, 0, IPC_RMID, 1) == -1) && (errno != EINTR)) {
+        sprintf(msgerr, "oss:\t\tcleanup->semctl (clock)");
+        perror(msgerr);
+    }
+    else writelog("Removed clock semaphore successfully", "oss");
+
+    // Remove memory reference semaphores
+    for (i = 0; i < CHILD_RUN; i++) {
+        if ((semctl(semid_memref[i], 0, IPC_RMID, 1) == -1) && (errno != EINTR)) {
+            sprintf(msgerr, "oss:\t\tcleanup->semctl (semid_memref[%d])", i);
+            perror(msgerr);
+        } else {
+            sprintf(msgerr, "Removed memory reference semaphore %d successfully", i);
+            writelog(msgerr, "oss");
+        }
+    }
+
+    // Print the final access statistics
+    printf("\nFinal memory access times:\n\n");
+    for (i = 0; i < CHILD_RUN; i++) {
+        printf("Child %02d:\t%d nanoseconds\n", i, access_time[i]);
+    }
+
+    return;
+}
+
+int count_children() {
+    int i, count = 0, j;
+
+    //if (DEBUGM) printf("index\t\tchild_running array\t\tchild_pid array\n");
+    for (i = 0; i < CHILD_RUN; i++) {
+        //if (DEBUGM) printf("%02d\t\t\t%d\t\t\t%d\n",i,ipcd->child_running[i],child_pid[i]);
+
+        // Check for child running status. If not, attempt to clear the process. If so, increment count.
+        if ( ipcd->child_running[i] < 0 ) {
+            sprintf(msgerr, "Child %02d (PID %d) has exited. Effective", i, child_pid[i]);
+            sprintf(msgerr, "%s memory access time was %d ns", msgerr, access_time[i]);
+            writelog(msgerr, "oss");
+            
+            if ( term_proc(i, SIGTERM) != 0 ) {
+                sprintf(msgerr, "There was an issue terminating child %02d", i);
+                if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                writelog(msgerr, "oss");
+                cleanup(SIGTERM);
+                exit(1);
+            } else {
+                // Release system memory pages allocated to this process
+                //  We only need to worry about this if oss is still running, otherwise this section
+                //  would be in termproc()
+                for (j = 0; j < MAX_CHILD_MEM; j++) {
+                    if ( ipcd->oss_paging.page_tbl[i][j] >= 0 ) {
+
+                        // Determine the section of the page in system memory
+                        temp = ipcd->oss_paging.page_tbl[i][j];
+
+                        sprintf(msgerr, "Clearing allocated memory frame %d for child %02d", temp, i);
+                        if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                        writelog(msgerr, "oss");
+
+                        section = temp / 32;
+
+                        // Determine the mask to use to clear the bit
+                        mask = 1;
+                        for (expnt = temp - (32 * section); expnt > 0; expnt--) mask *= 2;
+
+                        // Clear system memory vector bit corresponding to the page in the page table
+                        system_mem[section] = system_mem[section] & (max_mask - mask);
+                    }
+                }
+
+                ipcd->child_running[i] = 0;
+            }
+        }
+
+        // If this child is running, increment the total children count
+        if ( ipcd->child_running[i] ) count++;
+    }
+    sprintf(msgerr, "Current child count is %d", count);
+    writelog(msgerr, "oss");
+
+    return count;
+}
+
+// Child forking function
+void fork_child(int child) {
+    char child_arg[3] = "";                      // String to hold child argument
+    int j;
+
+    if ((child_pid[child] = fork()) < 0) {
+        sprintf(msgerr, "oss:\t\tfork() for child %02d", child);
+        perror(msgerr);
+        writelog("Error forking child", "oss");
+        cleanup(SIGTERM);
+        exit(1);
+    } else {
+        if (child_pid[child] == 0) {
+            // exec child
+            sprintf(child_arg, "%02d", child);
+            execl("./userproc", "userproc", child_arg, (char *)NULL);
+
+            // Handle execl() error, if one occurs
+            sprintf(msgerr, "oss:\t\texec child %02d after fork", child);
+            perror(msgerr);
+        } else {
+            // This is the parent; write to oss log about fork()
+            sprintf(msgerr, "Forked process ID %d for child %02d", child_pid[child], child);
+            writelog(msgerr, "oss");
+            if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+    
+            // Initialize run parameters of child
+            ipcd->child_running[child] = 1;
+            for (j = 0; j < MAX_CHILD_MEM; j++) ipcd->oss_paging.page_tbl[child][j] = -1;
+            ipcd->oss_paging.used[child] = 0;
+            ipcd->oss_paging.dirty[child] = 0;
+            ipcd->mem_references[child][0] = -1;
+        }
+    }
+    return;
+}
+
+void upd_pg_tbl(int page, int child, int ms, int ns, int frame) {
+    int i;
+
+    // Update the page table with this childs reference to system memory (only if we have to load from disk)
+    if ( frame >= 0 ) {
+        ipcd->oss_paging.page_tbl[child][page] = frame;
+
+        // Insert the referenced frame into the page queue
+        for (i = 0; i < MAX_CHILD_MEM; i++) {
+            if ( page_queue[child][i] < 0 ) page_queue[child][i] = frame;
+            break;
+        }
+    }
+
+    // Set used flag
+    mask = 1;
+    for (expnt = page; expnt > 0; expnt--) mask *= 2;
+    ipcd->oss_paging.used[child] = ipcd->oss_paging.used[child] | mask;
+
+    // Process write flag here
+    if ( ipcd->mem_references[child][1] == 1 ) {
+        // This is a page write - set dirty bit
+        ipcd->oss_paging.dirty[child] = ipcd->oss_paging.dirty[child] | mask;
+    }
+
+    // Advance the logical clock
+    sem_op(SEMWAIT, semid_clock, "oss");
+    adv_clock(0, ms, ns, "oss");
+    sem_op(SEMSIG, semid_clock, "oss");          // signal on clock semaphore
+
+    ipcd->mem_references[child][0] = -1;         // Reset the memory reference indicator
+    sprintf(msgerr, "Signalling memory semaphore for child %02d (%d)", child, semid_memref[child]);
+    if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+    writelog(msgerr, "oss");
+    sem_op(SEMSIG, semid_memref[child], "oss");  // signal on memory reference semaphore
+}
+
+void enqueue(int child) {
+    // Iterate through the queue from the beginning and place the pid in the first open slot
+    int i;
+
+    for (i = 0; i < CHILD_RUN; i++) {
+        if ( wait_queue[i] == child ) {
+            // Child is already waiting in the queue
+            sprintf(msgerr, "Child %02d is already waiting in the queue", child);
+            if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+            writelog(msgerr, "oss");
+            return;
+        }
+        if ( wait_queue[i] == -1 ) {
+            sprintf(msgerr, "Page fault detected for child %02d - placing in queue slot %d", child, i);
+            if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+            writelog(msgerr, "oss");
+
+            wait_queue[i] = child;
+            return;
+        } else {
+            if ( i == CHILD_RUN - 1 ) {
+                sprintf(msgerr, "Wait queue is full - waiting 15 ms");
+                if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                writelog(msgerr, "oss");
+                adv_clock(0, 15, 0, "oss");
+            }
+        }
+    }
+
+    return;
+}
+
+void dequeue() {
+    // If there is no one in the queue, just return
+    if ( wait_queue[0] == -1 ) return;
+    if (DEBUGM) printf("oss:\t\tchild at the head of the queue is %02d\n", wait_queue[0]);
+
+    int i, child, j, frame, k;
+
+    child = wait_queue[0];
+
+    // Allocate some system memory for this request
+    for (i = 0; i < 8; i++) {
+        for (j = 0; j < 32; j++) {
+            if ( ((system_mem[i] >> j) & 1) == 0 ) {
+                mask = 1;
+                for (expnt = j; expnt > 0; expnt--) mask *= 2;
+                //if (DEBUGM) printf("oss:\t\tmask at dequeue for child %02d is %u\n", child, mask);
+
+                system_mem[i] = system_mem[i] | mask;
+                page = ipcd->mem_references[child][0] / 1000;
+
+                frame = (i * 32) + j;
+                upd_pg_tbl(page, child, 15, 0, frame);
+
+                sprintf(msgerr, "Child %02d has allocated system memory page %d", child, frame);
+                if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                writelog(msgerr, "oss");
+
+                // Update childs memory access time average
+                access_time[child] = (access_time[child] + 15000000) / 2;
+
+                // If the dequeue was successful, shift all members in the queue one position "lower"
+                for (k = 0; k < CHILD_RUN; k++) {
+                    if ( ( k + 1 ) == CHILD_RUN ) {
+                        wait_queue[k] = -1;
+                        break;
+                    }
+                    wait_queue[k] = wait_queue[k+1];
+                    if ( wait_queue[k] == -1 ) break;
+                    if (DEBUGM) printf("oss:\t\tdequeue: wait_queue[%d] = %d\n", k, wait_queue[k]);
+                }
+                if (DEBUGM) printf("oss:\t\tChild %02d has been dequeued\n", child);
+
+                return;
+            }
+
+            // If we have not returned by now, we could not find an available memory frame
+            if ( i == 7 && j == 31 ) {
+                sprintf(msgerr, "System memory is exhausted - requeueing child %02d", child);
+                writelog(msgerr, "oss");
+                if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+            }
+        }
+    }
+
+
+    return;
+}
+
+// Page replacement paging algorithm
+void page_replacement(int child, int page) {
+
+    // Page replacement algorithm:
+    //  Check the used bit for the page at the head of the queue
+    //   If it is 0, page it out (simulate write-back if dirty flag set)
+    //   If it is 1, move the page to the end of the queue and set the used flag to 0
+
+    int i, k, page_moved = 0, slot_moved = 0;
+
+    if ( page_queue[child][0] >= 0 ) {
+        page_moved = page_queue[child][0];
+
+        // Determine the slot in the page table that this is referring to
+        for (i = 0; i < MAX_CHILD_MEM; i++) {
+            if ( ipcd->oss_paging.page_tbl[child][i] == page_moved ) {
+                slot_moved = i;
+                break;
+            }
+        }
+
+        // Calculate the section number for this page and the mask to use to clear/set it's bit
+        section = page_moved / 32;
+        mask = 1;
+        for (expnt = page_moved - (32 * section); expnt > 0; expnt--) mask *= 2;
+
+        //Determine if the used bit is set or not
+        if ( ( ipcd->oss_paging.used[child] >> slot_moved & 1 ) == 0 ) {
+            // Drop this page
+
+            // If the page is dirty, write it back to disk (advance clock 15 ms)
+            if ( ( ipcd->oss_paging.dirty[child] >> slot_moved & 1 ) == 1 ) {
+                sprintf(msgerr, "Child %02d is writing dirty page %d back to disk", child, page_moved);
+                if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                writelog(msgerr, "oss");
+                adv_clock(0, 15, 0, "oss");
+            }
+
+            // Clear the bit int the system memory bit vector
+            system_mem[section] = system_mem[section] & (max_mask - mask);
+
+            // Remove the page from the page table
+            sprintf(msgerr, "Child %02d is replacing page %d", child, page_moved);
+            if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+            writelog(msgerr, "oss");
+            ipcd->oss_paging.page_tbl[child][slot_moved] = -1;
+
+            // Rotate all pages forward in the queue starting from this location (insert page at end)
+            for (k = 0; k < CHILD_RUN; k++) {
+                if ( ( k + 1 ) == CHILD_RUN ) {
+                    page_queue[child][k] = -1;
+                    break;
+                }
+                page_queue[child][k] = page_queue[child][k+1];
+            }
+        } else {
+            // Move the page to the rear of the queue and reset the used bit
+            for (k = 0; k < CHILD_RUN; k++) {
+                if ( ( k + 1 ) == CHILD_RUN ) {
+                    page_queue[child][k] = page_moved;
+                    break;
+                }
+                page_queue[child][k] = page_queue[child][k+1];
+            }
+
+            // Clear the used bit
+            ipcd->oss_paging.used[child] = ipcd->oss_paging.used[child] & (max_mask - mask);
+            if (DEBUGM) printf("oss:\t\tThe clear used mask (child %02d) is %X\n", child, (max_mask - mask));
+
+            sprintf(msgerr, "Page replacement has moved frame %d for child ", page_moved);
+            sprintf(msgerr, "%s %02d to the rear of the page queue", msgerr, child);
+            if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+            writelog(msgerr, "oss");
+        }
+    }
+
+    if ( ipcd->oss_paging.page_tbl[child][page] < 0 ) {
+        // This is a page fault
+        enqueue(child);
+    } else {
+        // Page is already in memory - advance clock 10 ns and signal the child's memory semaphore
+        sprintf(msgerr, "Child %02d's request for address %d", i, ipcd->mem_references[child][0]);
+        sprintf(msgerr, "%s is already in memory", msgerr);
+        if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+        writelog(msgerr, "oss");
+
+        upd_pg_tbl(page, child, 0, 10, -1);
+
+        // Update childs memory access time average
+        access_time[child] = (access_time[child] + 10) / 2;
+    }
+
+     return;
+}
+
+
+// MAIN
+int main(int argc, char *argv[]) {
+
+    // Local variables
+    int child_sel;                               // Selected child to fork
+    int SHMKEY;                                  // Shared memory key
+    int SEMKEY1;                                 // Semaphore key (clock)
+    int sleep_secs;                              // Random sleep variable
+    int i, j;                                    // Iteration variables
+    int signum;                                  // Hold a signal number
+    unsigned int next_fork_sec = 0;              // Time of next fork second
+    unsigned int next_fork_msec = 0;             // Time of next fork millisecond
+
+    // Process command line argument
+    if (argc == 1) CHILD_RUN = 12;
+    else {
+        if ( ( CHILD_RUN = atoi(argv[1]) ) > CHILD_MAX ) {
+            CHILD_RUN = CHILD_MAX;
+            printf("\n\n\tNOTE: You have entered an argument value greater than the maximum\n");
+            printf("\tnumber of processes that this program can run concurrently. The\n");
+            printf("\tprogram will now run with a maximum concurrency of %d.\n\n", CHILD_RUN);
+            printf("\tPress the ENTER key to continue...\n\n");
+            getchar();
+        }
+    }
+
+    sprintf(msgerr, "The max number of processes will be: %d", CHILD_RUN);
+    if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+    writelog(msgerr, "oss");
+
+    if ( ! DEBUGM ) {
+        printf("Debugging is disabled. Please see the log files noted in the README for run details.\n");
+        printf("Program will exit if still running after %d seconds of the logical clock.\n", MAX_RUNTIME);
+        printf("\tPress the ENTER key to continue...\n\n");
+        getchar();
+    }
+
+    if ( DEBUGM ) printf("oss:\t\tThe size of the shared data structure is %ld bytes\n", IPCD_SZ);
+
+    srand(time(NULL));                           // Seed the random number generator
+
+    /*
+        SHARED MEMORY ALLOCATION
+    */
+
+    // Generate a shared memory key
+    if ((SHMKEY = ftok(".", 47604000)) == -1) {
+        perror("oss:\t\tftok (SHMKEY)");
+        exit(1);
+    }
+
+    // Generate a semaphore key for clock
+    if ((SEMKEY1 = ftok(".", 47604001)) == -1) {
+        perror("oss:\t\tftok (SEMKEY1)");
+        exit(1);
+    }
+
+    // Allocate memory for the shared IPC data
+    shmid_ipcd = shmget(SHMKEY, IPCD_SZ, 0600 | IPC_CREAT);
+    if (shmid_ipcd == -1) {
+        perror("oss:\t\tshmget");
+        exit(1);
+    }
+
+    // Get a pointer to the shared IPC data segment
+    if ( ! (ipcd = (ipcd_t *)(shmat(shmid_ipcd, 0, 0)))) {
+        sprintf(msgerr, "oss:\t\tshmat");
+        perror(msgerr);
+        exit(1);
+    }
+
+    writelog("Allocated and attached to shared memory for IPC data", "oss");
+
+    // Get a semaphore for the logical clock
+    if ((semid_clock = semget(SEMKEY1, 1, 0600 | IPC_CREAT)) == -1) {
+        sprintf(msgerr, "oss:\t\tsemget (clock)");
+        perror(msgerr);
+        exit(1);
+    }
+    sprintf(msgerr, "Clock semaphore ID is %d", semid_clock);
+    writelog(msgerr, "oss");
+    if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+
+    // Initialize the clock semaphore
+    union semun { int val; struct semid_ds *buf; ushort * array; } argument;
+    argument.val = 1;                            // Set the semaphore value to one
+    if (semctl(semid_clock, 0, SETVAL, argument) == -1) {
+        sprintf(msgerr, "oss:\t\tsemctl (clock)");
+        perror(msgerr);
+        exit(1);
+    }
+    writelog("Created and initialized clock semaphore to 1", "oss");
+
+    // Initialize the logical clock
+    sem_op(SEMWAIT, semid_clock, "oss");         // wait on clock semaphore
+    ipcd->clock_sec = 0;
+    ipcd->clock_nano = 0;
+    sem_op(SEMSIG, semid_clock, "oss");          // signal on clock semaphore
+    sprintf(msgerr, "Initialized clock");
+    writelog(msgerr, "oss");
+
+
+    // Create and initialize semaphores for memory access
+    int SEMKEY[CHILD_RUN];
+    for (i = 0; i < CHILD_RUN; i++) {
+        // Create a semaphore key
+        int keyid = 47604010 + i;
+        if ((SEMKEY[i] = ftok(".", keyid)) == -1) {
+            sprintf(msgerr, "oss:\t\tftok (SEMKEY[%d])", i);
+            perror(msgerr);
+            exit(1);
+        }
+
+        // Create the semaphore
+        if ((semid_memref[i] = semget(SEMKEY[i], 1, 0600 | IPC_CREAT)) == -1) {
+            sprintf(msgerr, "oss:\t\tsemget (SEMKEY[%d])", i);
+            perror(msgerr);
+            exit(1);
+        }
+
+        // Initialize the semaphore
+        union semun { int val; struct semid_ds *buf; ushort * array; } argument;
+        argument.val = 0;                        // Set the semaphore value to zero
+        if (semctl(semid_memref[i], 0, SETVAL, argument) == -1) {
+            sprintf(msgerr, "oss:\t\tsemctl (SEMKEY[%d])", i);
+            perror(msgerr);
+            exit(1);
+        }
+
+        sprintf(msgerr, "Created and set memory semaphore for child %02d (%d) to 0", i, semid_memref[i]);
+        writelog(msgerr, "oss");
+    }
+
+
+    // Initialize the child run status array, wait_queue, page queues, and access times
+    for (i = 0; i < CHILD_MAX; i++) {
+        ipcd->child_running[i] = 0;
+        wait_queue[i] = -1;
+        for (j = 0; j < MAX_CHILD_MEM; j++) page_queue[i][j] = -1;
+        access_time[i] = 0;
+    }
+    writelog("Initialized child run status array and wait_queue", "oss");
+
+
+    // Initialize the allocated system memory bit vectors
+    for (i = 0; i < 4; i++) system_mem[i] = 0;
+
+    sprintf(msgerr, "Initialized memory management structures");
+    if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+    writelog(msgerr, "oss");
+
+    /*
+        WORK SECTION
+    */
+
+    while (1) {
+
+        // Check for signals
+        if ( ( signum = sigcheck("oss") ) ) {
+            cleanup(signum);                     // Call cleanup with whatever the signal was
+            break;
+        }
+
+        /*
+            FORK AND EXEC CHILDREN
+        */
+
+        // Only attempt a fork another child if we are below CHILD_RUN processes
+        if ( ipcd->clock_sec >= next_fork_sec && ipcd->clock_milli >= next_fork_msec ) {
+            if ( count_children() < CHILD_RUN ) {
+
+                // Determine which child to fork
+                for (i = 0; i <= CHILD_RUN; i++) {
+                    if ( ipcd->child_running[i] == 0 ) {
+                        child_sel = i;
+                        break;
+                    }
+                }
+
+                sprintf(msgerr, "Selected child number %02d to fork", child_sel);
+                writelog(msgerr, "oss");
+
+                fork_child(child_sel);
+            }
+            next_fork_msec = ipcd->clock_milli + ( 1 + ( rand() % 500 ) );
+            if ( next_fork_msec >= 1000 ) {
+                next_fork_sec++;
+                next_fork_msec -= 1000;
+            }
+        }
+
+        /*
+            MEMORY MANAGEMENT
+        */
+
+        // Check the wait queue
+        if (DEBUGM) {
+            printf("oss:\t\tChecking wait queue...\n");
+            //for (i = 0; i < CHILD_RUN; i++) printf("oss:\t\twait_queue[%d] = %d\n", i, wait_queue[i]);
+        }
+        dequeue();
+
+        // Check for memory references
+        for (i = 0; i < CHILD_RUN; i++) {
+            if ( ipcd->child_running[i] > 0 && ipcd->mem_references[i][0] >= 0 ) {
+                page = ipcd->mem_references[i][0] / 1000;  // The high-order portion of address is the page
+
+                sprintf(msgerr, "Child %02d requests address", i);
+                sprintf(msgerr, "%s %d (page %d)", msgerr, ipcd->mem_references[i][0], page);
+                if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                writelog(msgerr, "oss");
+
+                page_replacement(i, page);
+            }
+        }
+
+        // Simulate 15 ms device wait by advancing the clock
+        adv_clock(0, 15, 0, "oss");
+
+        sprintf(msgerr, "Logical clock is now %d.%03d", ipcd->clock_sec, ipcd->clock_milli);
+        sprintf(msgerr, "%s.%03d", msgerr, ipcd->clock_nano);
+        writelog(msgerr, "oss");
+        if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+
+        // Break if we have reached MAX_RUNTIME elapsed (logical) seconds
+        if (ipcd->clock_sec >= MAX_RUNTIME) {
+            sprintf(msgerr, "Reached maximum run time - exiting.");
+            writelog(msgerr, "oss");
+            if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+            cleanup(SIGINT);
+            break;
+        }
+
+        // Print memory map
+        printf("System memory pages allocated (1k pages, 1 = allocated, 0 = available):\n");
+        printf("Pages\tPages\tPages\tPages\tPages\tPages\tPages\tPages\n");
+        printf("0-31\t32-63\t64-95\t96-127\t128-159\t160-191\t192-223\t224-255\n");
+        for (i = 0; i < 32; i++) {
+            printf("  %d\t  %d\t", ((system_mem[0] >> i) & 0x1), ((system_mem[1] >> i) & 0x1));
+            printf("  %d\t  %d\t", ((system_mem[2] >> i) & 0x1), ((system_mem[3] >> i) & 0x1));
+            printf("  %d\t  %d\t", ((system_mem[4] >> i) & 0x1), ((system_mem[5] >> i) & 0x1));
+            printf("  %d\t  %d\n", ((system_mem[6] >> i) & 0x1), ((system_mem[7] >> i) & 0x1));
+        }
+
+        // Write log entry and sleep
+        sleep_secs = rand() % 2;                 // Random from 0 to 1
+        //sprintf(msgerr, "Sleep %d", sleep_secs);
+        //writelog(msgerr, "oss");
+        sleep(sleep_secs);
+    }
+
+
+    return 0;
+}
+
+
+
+// RCS information:
+// $Author: o2-cho $
+// $Date: 2016/04/30 02:31:20 $
+// $RCSfile: main.c,v $
+// $Log: main.c,v $
+// Revision 1.17  2016/04/30 02:31:20  o2-cho
+// Release candidate 2
+//
+// Revision 1.16  2016/04/30 02:27:19  o2-cho
+// Release Candidate 1
+//
+// Revision 1.15  2016/04/29 22:39:37  o2-cho
+// Add 2nd chance algorithm
+//
+// Revision 1.14  2016/04/29 17:45:37  o2-cho
+// All working without 2nd chance algorithm
+//
+// Revision 1.13  2016/04/29 17:19:15  o2-cho
+// Bug fixes
+//
+// Revision 1.12  2016/04/29 03:34:58  o2-cho
+// Add final memory access time report
+//
+// Revision 1.11  2016/04/29 03:14:46  o2-cho
+// Many bug fixes
+//
+// Revision 1.10  2016/04/28 18:55:31  o2-cho
+// Add upd_pg_tbl function
+// Add clock advancement routines
+//
+// Revision 1.9  2016/04/27 20:35:48  o2-cho
+// Changed system memory bit vector from unsigned long to insigned int
+//
+// Revision 1.8  2016/04/26 16:44:42  o2-cho
+// Add use of adv_clock function
+//
+// Revision 1.7  2016/04/26 16:00:50  o2-cho
+// Add enqueue and dequeue functions
+//
+// Revision 1.6  2016/04/25 18:17:07  o2-cho
+// Updated page table initialization
+// Moved system memory allocation bit vector here
+//
+// Revision 1.5  2016/04/24 17:25:30  o2-cho
+// Checkpoint 04/24/15 12:25
+//
+// Revision 1.4  2016/04/24 15:29:31  o2-cho
+// Add bit vectors for memory management
+//
+// Revision 1.3  2016/04/23 20:02:55  o2-cho
+// Add max child process argument processing
+//
+// Revision 1.2  2016/04/23 15:45:42  o2-cho
+// Child cleanup bug fixed
+// Logging and debugging statements updated
+//
+// Revision 1.1  2016/04/19 17:51:43  o2-cho
+// Initial revision
+//
+@
+
+
+1.17
+log
+@Release candidate 2
+@
+text
+@a199 1
+            access_time[child] = 0;
+d566 1
+a566 1
+    // Initialize the child run status array, wait_queue, and page queues
+d571 1
+d691 1
+a691 1
+// $Date: 2016/04/30 02:27:19 $
+d694 3
+@
+
+
+1.16
+log
+@Release Candidate 1
+@
+text
+@d666 3
+a668 2
+        printf("System memory pages allocated (1k pages):\nPages\tPages\tPages\tPages\tPages\tPages\t");
+        printf("Pages\tPages\n 0-31\t32-63\t64-95\t96-127\t128-159\t160-191\t192-223\t224-255\n");
+d691 1
+a691 1
+// $Date: 2016/04/29 22:39:37 $
+d694 3
+@
+
+
+1.15
+log
+@Add 2nd chance algorithm
+@
+text
+@d20 1
+a20 1
+#define DEBUGM 1                                 // Enable debugging = 1
+d359 1
+a359 1
+        section = page / 32;
+d404 1
+d666 8
+a673 8
+        //printf("System memory pages allocated:\nBytes\tBytes\tBytes\tBytes\tBytes\tBytes\tBytes\t");
+        //printf("Bytes\n 0-31\t32-63\t64-95\t96-127\t128-159\t160-191\t192-223\t224-255\n");
+        //for (i = 0; i < 32; i++) {
+        //    printf("  %d\t  %d\t", ((system_mem[0] >> i) & 0x1), ((system_mem[1] >> i) & 0x1));
+        //    printf("  %d\t  %d\t", ((system_mem[2] >> i) & 0x1), ((system_mem[3] >> i) & 0x1));
+        //    printf("  %d\t  %d\t", ((system_mem[4] >> i) & 0x1), ((system_mem[5] >> i) & 0x1));
+        //    printf("  %d\t  %d\n", ((system_mem[6] >> i) & 0x1), ((system_mem[7] >> i) & 0x1));
+       // }
+d690 1
+a690 1
+// $Date: 2016/04/29 17:45:37 $
+d693 3
+@
+
+
+1.14
+log
+@All working without 2nd chance algorithm
+@
+text
+@d41 1
+d116 1
+a116 1
+    int i, count = 0, j, k;
+d136 1
+a136 1
+                //  We only need to worry about this if oss is still running, otherwise these this section
+d148 1
+a148 8
+                        section = 0;
+                        for (k = 0; k < 8; k++) {
+                            if ( temp < 32 ) break;
+                            else {
+                                section++;
+                                temp -= 32;
+                            }
+                        }
+a151 1
+                        temp = ipcd->oss_paging.page_tbl[i][j];
+d154 1
+a154 2
+                        // Clear the bit in the system memory vector corresponding to the page in the
+                        //  page table
+d211 2
+d214 9
+a222 1
+    if ( frame >= 0 ) ipcd->oss_paging.page_tbl[child][page] = frame;
+d291 1
+a291 1
+            if ( ((system_mem[i] >> j) & 0x1) == 0 ) {
+d338 89
+a426 1
+void page_replacement() {
+d440 1
+a440 1
+    int i;                                       // Iteration variables
+d566 1
+a566 1
+    // Initialize the child run status array and wait_queue
+d570 1
+d643 1
+a643 15
+                if ( ipcd->oss_paging.page_tbl[i][page] < 0 ) {
+                    // This is a page fault
+                    enqueue(i);
+                } else {
+                    // Page is already in memory - advance clock 10 ns and signal the child's memory semaphore
+                    sprintf(msgerr, "Child %02d's request for address %d", i, ipcd->mem_references[i][0]);
+                    sprintf(msgerr, "%s is already in memory", msgerr);
+                    if (DEBUGM) printf("oss:\t\t%s\n", msgerr);
+                    writelog(msgerr, "oss");
+                    
+                    upd_pg_tbl(page, i, 0, 10, -1);
+
+                    // Update childs memory access time average
+                    access_time[i] = (access_time[i] + 10) / 2;
+                }
+d689 1
+a689 1
+// $Date: 2016/04/29 17:19:15 $
+d692 3
+@
+
+
+1.13
+log
+@Bug fixes
+@
+text
+@d52 1
+a52 1
+    if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d59 1
+a59 1
+    if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d76 1
+a76 1
+                if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d89 1
+a89 1
+        sprintf(msgerr, "oss:\t\t cleanup->semctl (clock)");
+d97 1
+a97 1
+            sprintf(msgerr, "oss:\t\t cleanup->semctl (semid_memref[%d])", i);
+d129 1
+a129 1
+                if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d144 1
+a144 1
+                        if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d186 1
+a186 1
+        sprintf(msgerr, "oss:\t\t fork() for child %02d", child);
+d198 1
+a198 1
+            sprintf(msgerr, "oss:\t\t exec child %02d after fork", child);
+d204 1
+a204 1
+            if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d240 1
+a240 1
+    if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d253 1
+a253 1
+            if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d259 1
+a259 1
+            if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d267 1
+a267 1
+                if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d280 1
+a280 1
+    if (DEBUGM) printf("oss:\t\t child at the head of the queue is %02d\n", wait_queue[0]);
+d292 1
+a292 1
+                //if (DEBUGM) printf("oss:\t\t mask at dequeue for child %02d is %u\n", child, mask);
+d301 1
+a301 1
+                if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d315 1
+a315 1
+                    if (DEBUGM) printf("oss:\t\t dequeue: wait_queue[%d] = %d\n", k, wait_queue[k]);
+d317 1
+a317 1
+                if (DEBUGM) printf("oss:\t\t Child %02d has been dequeued\n", child);
+d326 1
+a326 1
+                if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d369 1
+a369 1
+    if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d379 1
+a379 1
+    if ( DEBUGM ) printf("oss:\t\t The size of the shared data structure is %ld bytes\n", IPCD_SZ);
+d389 1
+a389 1
+        perror("oss:\t\t ftok (SHMKEY)");
+d395 1
+a395 1
+        perror("oss:\t\t ftok (SEMKEY1)");
+d402 1
+a402 1
+        perror("oss:\t\t shmget");
+d408 1
+a408 1
+        sprintf(msgerr, "oss:\t\t shmat");
+d417 1
+a417 1
+        sprintf(msgerr, "oss:\t\t semget (clock)");
+d423 1
+a423 1
+    if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d429 1
+a429 1
+        sprintf(msgerr, "oss:\t\t semctl (clock)");
+d450 1
+a450 1
+            sprintf(msgerr, "oss:\t\t ftok (SEMKEY[%d])", i);
+d457 1
+a457 1
+            sprintf(msgerr, "oss:\t\t semget (SEMKEY[%d])", i);
+d466 1
+a466 1
+            sprintf(msgerr, "oss:\t\t semctl (SEMKEY[%d])", i);
+d488 1
+a488 1
+    if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d537 2
+a538 2
+            printf("oss:\t\t Checking wait queue...\n");
+            //for (i = 0; i < CHILD_RUN; i++) printf("oss:\t\t wait_queue[%d] = %d\n", i, wait_queue[i]);
+d549 1
+a549 1
+                if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d559 1
+a559 1
+                    if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d576 1
+a576 1
+        if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d582 1
+a582 1
+            if (DEBUGM) printf("oss:\t\t %s\n", msgerr);
+d612 1
+a612 1
+// $Date: 2016/04/29 03:34:58 $
+d615 3
+@
+
+
+1.12
+log
+@Add final memory access time report
+@
+text
+@d32 1
+a32 1
+int wait_queue[CHILD_MAX] = { -1 };              // Queue for processes waiting on page swap
+d52 1
+a52 1
+    if (DEBUGM) printf("oss: %s\n", msgerr);
+d59 1
+a59 1
+    if (DEBUGM) printf("oss: %s\n", msgerr);
+d76 1
+a76 1
+                if (DEBUGM) printf("oss: %s\n", msgerr);
+d89 1
+a89 1
+        sprintf(msgerr, "oss: cleanup->semctl (clock)");
+d97 1
+a97 1
+            sprintf(msgerr, "oss: cleanup->semctl (semid_memref[%d])", i);
+d106 1
+a106 1
+    printf("Final memory access times:\n\n");
+d129 1
+a129 1
+                if (DEBUGM) printf("oss: %s\n", msgerr);
+d144 1
+a144 1
+                        if (DEBUGM) printf("oss: %s\n", msgerr);
+d186 1
+a186 1
+        sprintf(msgerr, "oss: fork() for child %02d", child);
+d198 1
+a198 1
+            sprintf(msgerr, "oss: exec child %02d after fork", child);
+d204 1
+a204 1
+            if (DEBUGM) printf("oss: %s\n", msgerr);
+d239 3
+d250 7
+a256 1
+        if ( wait_queue[i] == child ) return;    // Child is already waiting in the queue
+d258 2
+a259 2
+            sprintf(msgerr, "Page fault detected for child %02d - placing in the queue", child);
+            if (DEBUGM) printf("oss: %s\n", msgerr);
+d263 1
+a263 1
+            break;
+d267 1
+a267 1
+                if (DEBUGM) printf("oss: %s\n", msgerr);
+d280 1
+a280 1
+    if (DEBUGM) printf("oss: child at the head of the queue is %02d\n", wait_queue[0]);
+d282 1
+a282 1
+    int i, child, j, frame;
+d292 1
+a292 1
+                //if (DEBUGM) printf("oss: mask at dequeue for child %02d is %u\n", child, mask);
+d301 1
+a301 1
+                if (DEBUGM) printf("oss: %s\n", msgerr);
+d308 3
+a310 4
+                for (i = 0; i < CHILD_RUN; i++) {
+                    if ( wait_queue[i] == -1 ) break;
+                    if ( ( i + 1 ) == CHILD_RUN ) {
+                        wait_queue[i] = -1;
+d313 3
+a315 1
+                    wait_queue[i] = wait_queue[i+1];
+d317 1
+a317 1
+                if (DEBUGM) printf("oss: Child %02d has been dequeued\n", child);
+d326 1
+a326 1
+                if (DEBUGM) printf("oss: %s\n", msgerr);
+d335 5
+a353 1
+    int loop_count = 0;                          // Loop counter for debugging
+d369 1
+a369 1
+    if (DEBUGM) printf("oss: %s\n", msgerr);
+d379 1
+a379 1
+    if ( DEBUGM ) printf("oss: The size of the shared data structure is %ld bytes\n", IPCD_SZ);
+d389 1
+a389 1
+        perror("oss: ftok (SHMKEY)");
+d395 1
+a395 1
+        perror("oss: ftok (SEMKEY1)");
+d402 1
+a402 1
+        perror("oss: shmget");
+d408 1
+a408 1
+        sprintf(msgerr, "oss: shmat");
+d417 1
+a417 1
+        sprintf(msgerr, "oss: semget (clock)");
+d423 1
+a423 1
+    if (DEBUGM) printf("oss: %s\n", msgerr);
+d429 1
+a429 1
+        sprintf(msgerr, "oss: semctl (clock)");
+d450 1
+a450 1
+            sprintf(msgerr, "oss: ftok (SEMKEY[%d])", i);
+d457 1
+a457 1
+            sprintf(msgerr, "oss: semget (SEMKEY[%d])", i);
+d464 1
+a464 1
+        argument.val = 1;                            // Set the semaphore value to one
+d466 1
+a466 1
+            sprintf(msgerr, "oss: semctl (SEMKEY[%d])", i);
+d471 1
+a471 1
+        sprintf(msgerr, "Created and initialized memory reference semaphore (%d) to 1", i);
+d476 6
+a481 3
+    // Initialize the child run status array
+    for (i = 0; i < CHILD_RUN; i++) ipcd->child_running[i] = 0;
+    writelog("Initialized child run status array", "oss");
+d488 1
+a488 1
+    if (DEBUGM) printf("oss: %s\n", msgerr);
+a495 1
+        if (DEBUGM) printf("oss: Loop count = %d\n", loop_count++);
+d536 4
+a539 1
+        if (DEBUGM) printf("oss: Checking wait queue...\n");
+d549 1
+a549 1
+                if (DEBUGM) printf("oss: %s\n", msgerr);
+d557 5
+d576 1
+a576 1
+        if (DEBUGM) printf("oss: %s\n", msgerr);
+d582 1
+a582 1
+            if (DEBUGM) printf("oss: %s\n", msgerr);
+d612 1
+a612 1
+// $Date: 2016/04/29 03:14:46 $
+d615 3
+@
+
+
+1.11
+log
+@Many bug fixes
+@
+text
+@d105 6
+d588 1
+a588 1
+// $Date: 2016/04/28 18:55:31 $
+d591 3
+@
+
+
+1.10
+log
+@Add upd_pg_tbl function
+Add clock advancement routines
+@
+text
+@d32 1
+a32 1
+int wait_queue[CHILD_MAX];                       // Queue for processes waiting on page swap
+d49 1
+a49 1
+    int status, i;                               // Hold status from wait(), iteration variable
+a61 27
+    // Release system memory pages allocated to this process
+    for (i = 0; i < MAX_CHILD_MEM; i++) {
+        if ( ipcd->oss_paging.page_tbl[child][i] != 0 ) {
+
+            // Determine the section of the page in system memory
+            temp = ipcd->oss_paging.page_tbl[child][i];
+            section = 0;
+            for (i = 0; i < 8; i++) {
+                if ( temp < 32 ) break;
+                else {
+                    section++;
+                    temp -= 32;
+                }
+            }
+
+            // Determine the mask to use to clear the bit
+            mask = 1;
+            for (expnt = ipcd->oss_paging.page_tbl[child][i] - (32 * section); expnt > 0; expnt--) mask *= 2;
+
+            // Clear the bit in the system memory vector corresponding to the page in the page table
+            system_mem[section] = system_mem[section] & (max_mask - mask);
+
+            // Set the page table entry for this position to 0
+            ipcd->oss_paging.page_tbl[child][i] = 0;
+        }
+    }
+
+d109 1
+a109 1
+    int i, count = 0;
+d127 36
+a162 1
+            } else ipcd->child_running[i] = 0;
+d177 1
+d200 1
+a200 3
+            // Set running status of child
+            //sprintf(msgerr, "Setting child %02d status 'running'", child);
+            //writelog(msgerr, "oss");
+d202 5
+d212 4
+a215 1
+void upd_pg_tbl(int page, int child, int ms, int ns) {
+d224 1
+a224 1
+        ipcd->oss_paging.used[child] = ipcd->oss_paging.dirty[child] | mask;
+d228 1
+a228 1
+    sem_op(SEMWAIT, semid_clock, "oss");         // wait on clock semaphore
+d232 1
+a232 1
+    ipcd->mem_references[child][0] = 0;
+d240 6
+a245 3
+    sprintf(msgerr, "Page fault detected for child %02d - placing in the queue", child);
+    if (DEBUGM) printf("oss: %s\n", msgerr);
+    writelog(msgerr, "oss");
+a246 2
+    for (i = 0; i < CHILD_RUN; i++) {
+        if ( wait_queue[i] == 0 ) {
+d263 5
+a267 2
+    // Shift all members in the queue one position "lower" (closer to the start of the queue)
+    int i, child, j;
+d277 2
+a280 2
+                ipcd->oss_paging.page_tbl[child][page] = ( i * 32 ) + j;
+                ipcd->mem_references[child][0] = 0;
+d282 29
+a310 1
+                upd_pg_tbl(page, child, 15, 0);
+d314 1
+a314 10
+    if ( ipcd->mem_references[child][0] == 0 ) {
+        for (i = CHILD_RUN - 1; i < 0; i--) {
+            wait_queue[i-1] = wait_queue[i];
+            wait_queue[i] = 0;
+        }
+    } else {
+        sprintf(msgerr, "System memory is exhausted - requeueing child %02d to allow some to free", child);
+        writelog(msgerr, "oss");
+        if (DEBUGM) printf("oss: %s\n", msgerr);
+    }
+d329 1
+a329 1
+    int i, j;                                    // Iteration variables
+d333 1
+a333 3
+    int check_queue;                             // Flag to check the waiting queue or not
+    unsigned int queue_sec = 0;                  // Part of queue check timer
+    unsigned int queue_ms = 0;                   // Part of queue check timer
+a460 7
+    // Initialize page table, used and dirty bit vectors
+    for (i = 0; i < CHILD_MAX; i++) {
+        for (j = 0; j < MAX_CHILD_MEM; j++) ipcd->oss_paging.page_tbl[i][j] = 0;
+        ipcd->oss_paging.used[i] = 0;
+        ipcd->oss_paging.dirty[i] = 0;
+    }
+
+a467 8
+    // Fork an initial CHILD_RUN children
+    //for (i = 0; i < CHILD_RUN; i++) {
+    //    sprintf(msgerr, "Performing initial fork of %d process", CHILD_RUN);
+    //    writelog(msgerr, "oss");
+
+    //    fork_child(i);
+    //}
+
+d473 1
+a500 1
+                access_time[child_sel] = 0;
+d513 3
+a515 9
+        // See if we need to service the waiting queue
+        if ( ipcd->clock_sec >= queue_sec && ipcd->clock_milli >= queue_ms ) check_queue = 1;
+
+        //   Dequeue the first process in the swap queue if a previous swap operation has completed
+        if ( check_queue && wait_queue[0] ) {
+            // Attempt to fulfill the request by the pid contained in wait_queue[0]
+            dequeue();
+            check_queue = 0;
+        }
+d519 1
+a519 1
+            if ( ipcd->mem_references[i][0] != 0 ) {
+d521 7
+a527 1
+                if ( ipcd->oss_paging.page_tbl[i][page] == 0 ) {
+a529 6
+                    queue_ms = ipcd->clock_milli + 15;   // start the swap wait timer
+                    if ( queue_ms >= 1000 ) {
+                        queue_sec++;
+                        queue_ms -= 1000;
+                    }
+                    access_time[i] = (access_time[i] + 15000000) / 2;
+d532 4
+a535 1
+                    upd_pg_tbl(page, i, 0, 10);
+d540 3
+d558 8
+a565 8
+        printf("Memory map:\nBytes\tBytes\tBytes\tBytes\tBytes\tBytes\tBytes\tBytes\n");
+        printf(" 0-31\t32-63\t64-95\t96-127\t128-159\t160-191\t192-223\t224-255\n");
+        for (i = 0; i < 32; i++) {
+            printf("  %d\t  %d\t", ((system_mem[0] >> i) & 0x1), ((system_mem[1] >> i) & 0x1));
+            printf("  %d\t  %d\t", ((system_mem[2] >> i) & 0x1), ((system_mem[3] >> i) & 0x1));
+            printf("  %d\t  %d\t", ((system_mem[4] >> i) & 0x1), ((system_mem[5] >> i) & 0x1));
+            printf("  %d\t  %d\n", ((system_mem[6] >> i) & 0x1), ((system_mem[7] >> i) & 0x1));
+        }
+d582 1
+a582 1
+// $Date: 2016/04/27 20:35:48 $
+d585 4
+@
+
+
+1.9
+log
+@Changed system memory bit vector from unsigned long to insigned int
+@
+text
+@d38 1
+d71 1
+a71 1
+            else {
+d192 2
+a193 2
+            sprintf(msgerr, "Setting child %02d status 'running'", child);
+            writelog(msgerr, "oss");
+d200 22
+a221 1
+void enqueue(int pid) {
+d225 4
+d231 1
+a231 1
+            wait_queue[i] = pid;
+d235 4
+a238 3
+                // queue is full!
+                //
+                // INSERT PROCESSING FOR FULL QUEUE HERE
+d248 14
+a261 1
+    int i;
+d263 13
+a275 3
+    for (i = CHILD_RUN - 1; i < 0; i--) {
+        wait_queue[i-1] = wait_queue[i];
+        wait_queue[i] = 0;
+d293 2
+a294 1
+    int next_fork;                               // Time of next fork attempt in milliseconds
+d296 2
+a297 2
+    unsigned int queue_sec;                      // Part of queue check timer
+    unsigned int queue_ms;                       // Part of queue check timer
+d439 8
+a450 1
+    next_fork = 1 + ( rand() % 500 );
+d464 1
+a464 1
+        if ( ipcd->clock_milli >= next_fork ) {
+d481 5
+a485 1
+            next_fork = 1 + ( rand() % 500 );
+d493 1
+a493 1
+        if ( ipcd->clock_sec > queue_sec || (ipcd->clock_milli - queue_ms) > 15 ) check_queue = 1;
+d497 1
+a497 1
+            // Do something for the pid contained in wait_queue[0]
+d502 19
+a520 24
+        //   For each memory reference, check for page fault
+        //   If page fault, enqueue the process in the swap queue
+        //if ... {
+        //    enqueue(child);
+        //    queue_sec = ipcd->clock_sec;       // start the swap wait timer
+        //    queue_ms = ipcd->clock_milli;      // start the swap wait timer
+        //    access_time[child] = (access_time[child] + 15000000) / 2;
+        //}
+        //   Else add the page to the page table, update the system memory vetor, advance clock 10 ns and
+        //   signal the child's memory semaphore
+        //
+
+        /*
+            ADVANCE THE CLOCK
+        */
+
+        // Wait for the clock to become available
+        sem_op(SEMWAIT, semid_clock, "oss");     // wait on clock semaphore
+
+        // Advance the clock
+        adv_clock(0, 1 + ( rand() % 500 ), 0, "oss"); //  Random 1 to 500
+
+        // Signal that the clock is now available
+        sem_op(SEMSIG, semid_clock, "oss");      // signal on clock semaphore
+d548 2
+a549 2
+        sprintf(msgerr, "Sleep %d", sleep_secs);
+        writelog(msgerr, "oss");
+d561 1
+a561 1
+// $Date: 2016/04/26 16:44:42 $
+d564 3
+@
+
+
+1.8
+log
+@Add use of adv_clock function
+@
+text
+@d33 7
+d48 1
+a48 1
+    int status;                                  // Hold status from wait()
+d61 27
+d143 2
+a144 1
+            sprintf(msgerr, "Child %02d (PID %d) has exited...", i, child_pid[i]);
+a242 1
+    unsigned long system_mem[4];                 // System memory allocation vectors
+d245 2
+a264 2
+    int access_time[CHILD_RUN];                  // Hold effective memory access time for each process
+
+d430 5
+a434 3
+        // Check memory references
+        //   Dequeue the first process in the swap queue
+        if ( wait_queue[0] != 0 ) {
+d437 1
+d442 9
+a450 2
+        //   Else advance clock 10 ns and signal child memory semaphore
+        //   Either way, record the access time for the child (in ns, averaged with previous value)
+d479 9
+d504 1
+a504 1
+// $Date: 2016/04/26 16:00:50 $
+d507 3
+@
+
+
+1.7
+log
+@Add enqueue and dequeue functions
+@
+text
+@d17 1
+d32 1
+a32 1
+int wait_queue[CHILD];                           // Queue for processes waiting on page swap
+a228 1
+    int req_queue[CHILD_RUN] = { 0 };            // Queue for page swap waiting
+d398 5
+a411 3
+
+/*     EDIT      EDIT      EDIT      EDIT      EDIT      EDIT      EDIT 
+// MOVE CLOCK ADVANCEMENT TO A (SHARED) FUNCTION?
+d416 1
+a416 10
+        ipcd->clock_milli += 1 + ( rand() % 500 ); //  Random 1 to 500
+        if ( ipcd->clock_milli >= 1000 ) {
+            ipcd->clock_sec++;
+            ipcd->clock_milli -= 1000;
+        }
+        //ipcd->clock_nano += rand() % 1000;       //  Random 0 to 999
+        //if ( ipcd->clock_nano >= 1000 ) {
+        //    ipcd->clock_milli++;
+        //    ipcd->clock_nano -= 1000;
+        //}
+a419 1
+*/
+d451 1
+a451 1
+// $Date: 2016/04/25 18:17:07 $
+d454 3
+@
+
+
+1.6
+log
+@Updated page table initialization
+Moved system memory allocation bit vector here
+@
+text
+@d30 2
+a31 1
+int CHILD_RUN;
+d86 1
+a86 1
+	for (i = 0; i < CHILD_RUN; i++) {
+d94 1
+a94 1
+	}
+d163 34
+d208 2
+d228 2
+a229 2
+
+    srand(time(NULL));                           // Seed the random number generator
+d234 2
+a235 1
+        //sleep(5);
+d240 2
+d304 2
+a305 2
+	int SEMKEY[CHILD_RUN];
+	for (i = 0; i < CHILD_RUN; i++) {
+d307 1
+a307 1
+		int keyid = 47604010 + i;
+d309 1
+a309 1
+			sprintf(msgerr, "oss: ftok (SEMKEY[%d])", i);
+d330 1
+a330 1
+        sprintf(msgerr, "Created and initialized memory reference semaphore %d to 1", i);
+d340 1
+a340 1
+	// Initialize page table, used and dirty bit vectors
+d351 2
+a352 3
+	if (DEBUGM) printf("oss: %s\n", msgerr);
+	writelog(msgerr, "oss");
+
+d358 1
+a358 1
+    // Go into fork loop
+a366 2
+
+
+d372 2
+a373 1
+        if ( count_children() < CHILD_RUN ) {
+d375 6
+a380 5
+            // Determine which child to fork
+            for (i = 0; i <= CHILD_RUN; i++) {
+                if ( ipcd->child_running[i] == 0 ) {
+                    child_sel = i;
+                    break;
+a381 1
+            }
+d383 2
+a384 2
+            sprintf(msgerr, "Selected child number %02d to fork", child_sel);
+            writelog(msgerr, "oss");
+d386 4
+a389 1
+            fork_child(child_sel);
+d392 10
+d407 3
+d427 1
+d459 1
+a459 1
+// $Date: 2016/04/24 17:25:30 $
+d462 4
+@
+
+
+1.5
+log
+@Checkpoint 04/24/15 12:25
+@
+text
+@d84 11
+d172 1
+a172 1
+
+d302 3
+a304 3
+        ipcd->child_used[i] = 0;
+        ipcd->child_dirty[i] = 0;
+        for (j = 0; j < CHILD_MAX_MEM; j++) ipcd->child_mem[i][j] = 0;
+d308 1
+a308 1
+    for (i = 0; i < 4; i++) ipcd->system_mem[i] = 0;
+d404 1
+a404 1
+// $Date: 2016/04/24 15:29:31 $
+d407 3
+@
+
+
+1.4
+log
+@Add bit vectors for memory management
+@
+text
+@d27 1
+d159 1
+a159 1
+    int i;                                       // Iteration variables
+d164 1
+a164 1
+    if (argc == 1) CHILD_RUN = CHILD_MAX;
+d185 1
+a185 1
+        printf("Program will exit normally if still running after 300 seconds of the logical clock.\n");
+d251 33
+d289 13
+a301 11
+    // Initialize page table and optimization bit-vectors
+	//  Parameters:
+    //   256k total system memory
+    //   1k page size
+    //   32k max memory usage per process
+    //  Need:
+    //   a 32x18 array of short containing page number references
+    //   a 2x18 arry of unsigned integer to use as 32 bit-wide vectors for used and dirty bits
+    //     (bit positions will correllate with array indices from the page reference array)
+    //   a 4 member array of unsigned long to create a 256 bit-wide vector for system memory
+    //    Check the textbooks for references to each
+d349 1
+a349 1
+        ipcd->clock_milli += rand() % 1000;      //  Random 0 to 999
+d354 5
+a358 5
+        ipcd->clock_nano += rand() % 1000;       //  Random 0 to 999
+        if ( ipcd->clock_nano >= 1000 ) {
+            ipcd->clock_milli++;
+            ipcd->clock_nano -= 1000;
+        }
+d368 2
+a369 2
+        // Break if we have reached 300 elapsed (logical) seconds
+        if (ipcd->clock_sec >= 300) {
+d393 1
+a393 1
+// $Date: 2016/04/23 20:02:55 $
+d396 3
+@
+
+
+1.3
+log
+@Add max child process argument processing
+@
+text
+@d4 13
+a16 13
+#include <stdio.h>								// printf()
+#include <stdlib.h>								// exit()
+#include <time.h>								// time()
+#include <wait.h>								// wait()
+#include <unistd.h>								// sleep(), etc.
+#include <errno.h>								// perror()
+#include <sys/ipc.h>							// Inter-process communication
+#include <sys/shm.h>							// Shared memory
+#include <sys/sem.h>							// Semaphores
+#include "ipc_data.h"							// IPC Data structure
+#include "writelog.h"							// Log writer
+#include "semops.h"								// Semaphore operations
+#include "sigcheck.h"							// Signal processing
+d19 2
+a20 2
+#define DEBUGM 1								// Enable debugging = 1
+#define IPCD_SZ sizeof(ipcd_t)					// Size of the IPC data structure
+d24 5
+a28 5
+int shmid_ipcd;									// Shared memory ID
+ipcd_t *ipcd;									// Pointer for shared memory
+int semid_clock;								// Semaphore ID for logical clock
+char msgerr[50] = "";							// Hold a message to be passed to perror() or writelog()
+int child_pid[CHILD_MAX] = { 0 };				// Array of PIDs for child processes
+d38 1
+a38 1
+	int status;									// Hold status from wait()
+d40 3
+a42 3
+	sprintf(msgerr, "Attempting to terminate child %02d (PID %d)", child, child_pid[child]);
+	if (DEBUGM) printf("oss: %s\n", msgerr);
+	writelog(msgerr, "oss");
+d44 2
+a45 2
+	kill(child_pid[child], sig);
+	waitpid(child_pid[child], &status, WCONTINUED);
+d47 3
+a49 3
+	sprintf(msgerr, "Child %02d returned %d", child, WEXITSTATUS(status));
+	if (DEBUGM) printf("oss: %s\n", msgerr);
+	writelog(msgerr, "oss");
+d51 1
+a51 1
+	return WEXITSTATUS(status);
+d57 1
+a57 1
+	writelog("Executing cleanup()", "oss");
+d59 23
+a81 23
+	// Terminate children
+	int i;
+	for (i = 0; i < CHILD_RUN; i++) {
+		if ( ipcd->child_running[i] != 0 ) {
+			if ( term_proc(i, termsig) != 0 ) {
+				sprintf(msgerr, "There was an issue terminating child %02d", i);
+				if (DEBUGM) printf("oss: %s\n", msgerr);
+				writelog(msgerr, "oss");
+			}
+		}
+	}
+
+	// Release shared memory
+	int ipcd_ret = shmctl(shmid_ipcd, IPC_RMID, (struct shmid_ds *)NULL);
+	if (ipcd_ret != 0) fprintf(stderr, "Error releasing shared memory - please clear manually\n");
+	else writelog("Released shared memory successfully", "oss");
+
+	// Remove clock semaphore
+	if ((semctl(semid_clock, 0, IPC_RMID, 1) == -1) && (errno != EINTR)) {
+		sprintf(msgerr, "oss: cleanup->semctl (clock)");
+		perror(msgerr);
+	}
+	else writelog("Removed clock semaphore successfully", "oss");
+d83 1
+a83 1
+	return;
+d87 1
+a87 1
+	int i, count = 0;
+d89 23
+a111 23
+	//if (DEBUGM) printf("index\t\tchild_running array\t\tchild_pid array\n");
+	for (i = 0; i < CHILD_RUN; i++) {
+		//if (DEBUGM) printf("%02d\t\t\t%d\t\t\t%d\n",i,ipcd->child_running[i],child_pid[i]);
+
+		// Check for child running status. If not, attempt to clear the process. If so, increment count.
+		if ( ipcd->child_running[i] < 0 ) {
+			sprintf(msgerr, "Child %02d (PID %d) has exited...", i, child_pid[i]);
+			writelog(msgerr, "oss");
+			
+			if ( term_proc(i, SIGTERM) != 0 ) {
+				sprintf(msgerr, "There was an issue terminating child %02d", i);
+				if (DEBUGM) printf("oss: %s\n", msgerr);
+				writelog(msgerr, "oss");
+				cleanup(SIGTERM);
+				exit(1);
+			} else ipcd->child_running[i] = 0;
+		}
+
+		// If this child is running, increment the total children count
+		if ( ipcd->child_running[i] ) count++;
+	}
+	sprintf(msgerr, "Current child count is %d", count);
+	writelog(msgerr, "oss");
+d113 1
+a113 1
+	return count;
+d118 1
+a118 1
+	char child_arg[3] = "";						// String to hold child argument
+d120 28
+a147 28
+	if ((child_pid[child] = fork()) < 0) {
+		sprintf(msgerr, "oss: fork() for child %02d", child);
+		perror(msgerr);
+		writelog("Error forking child", "oss");
+		cleanup(SIGTERM);
+		exit(1);
+	} else {
+		if (child_pid[child] == 0) {
+			// exec child
+			sprintf(child_arg, "%02d", child);
+			execl("./userproc", "userproc", child_arg, (char *)NULL);
+
+			// Handle execl() error, if one occurs
+			sprintf(msgerr, "oss: exec child %02d after fork", child);
+			perror(msgerr);
+		} else {
+			// This is the parent; write to oss log about fork()
+			sprintf(msgerr, "Forked process ID %d for child %02d", child_pid[child], child);
+			writelog(msgerr, "oss");
+			if (DEBUGM) printf("oss: %s\n", msgerr);
+	
+			// Set running status of child
+			sprintf(msgerr, "Setting child %02d status 'running'", child);
+			writelog(msgerr, "oss");
+			ipcd->child_running[child] = 1;
+		}
+	}
+	return;
+d153 195
+a347 182
+	// Local variables
+	int child_sel;								// Selected child to fork
+	int SHMKEY;									// Shared memory key
+	int SEMKEY1;								// Semaphore key (clock)
+	int sleep_secs;								// Random sleep variable
+	int i;										// Iteration variables
+	int signum;									// Hold a signal number
+
+
+	// Process command line argument
+	if (argc == 1) CHILD_RUN = CHILD_MAX;
+	else {
+		if ( ( CHILD_RUN = atoi(argv[1]) ) > CHILD_MAX ) {
+			CHILD_RUN = CHILD_MAX;
+			printf("\n\n\tNOTE: You have entered an argument value greater than the maximum\n");
+			printf("\tnumber of processes that this program can run concurrently. The\n");
+			printf("\tprogram will now run with a maximum concurrency of %d.\n\n", CHILD_RUN);
+			printf("\tPress the ENTER key to continue...\n\n");
+			getchar();
+		}
+	}
+
+	sprintf(msgerr, "The max number of processes will be: %d", CHILD_RUN);
+	if (DEBUGM) printf("oss: %s\n", msgerr);
+	writelog(msgerr, "oss");
+
+
+	srand(time(NULL));							// Seed the random number generator
+
+	if ( ! DEBUGM ) {
+		printf("Debugging is disabled. Please see the log files noted in the README for run details.\n");
+		printf("Program will exit normally if still running after 300 seconds of the logical clock.\n");
+		//sleep(5);
+	}
+
+	if ( DEBUGM ) printf("oss: The size of the shared data structure is %ld bytes\n", IPCD_SZ);
+
+	/*
+		SHARED MEMORY ALLOCATION
+	*/
+
+	// Generate a shared memory key
+	if ((SHMKEY = ftok(".", 47604000)) == -1) {
+		perror("oss: ftok (SHMKEY)");
+		exit(1);
+	}
+
+	// Generate a semaphore key for clock
+	if ((SEMKEY1 = ftok(".", 47604001)) == -1) {
+		perror("oss: ftok (SEMKEY1)");
+		exit(1);
+	}
+
+	// Allocate memory for the shared IPC data
+	shmid_ipcd = shmget(SHMKEY, IPCD_SZ, 0600 | IPC_CREAT);
+	if (shmid_ipcd == -1) {
+		perror("oss: shmget");
+		exit(1);
+	}
+
+	// Get a pointer to the shared IPC data segment
+	if ( ! (ipcd = (ipcd_t *)(shmat(shmid_ipcd, 0, 0)))) {
+		sprintf(msgerr, "oss: shmat");
+		perror(msgerr);
+		exit(1);
+	}
+
+	writelog("Allocated and attached to shared memory for IPC data", "oss");
+
+	// Get a semaphore for the logical clock
+	if ((semid_clock = semget(SEMKEY1, 1, 0600 | IPC_CREAT)) == -1) {
+		sprintf(msgerr, "oss: semget (clock)");
+		perror(msgerr);
+		exit(1);
+	}
+	sprintf(msgerr, "Clock semaphore ID is %d", semid_clock);
+	writelog(msgerr, "oss");
+	if (DEBUGM) printf("oss: %s\n", msgerr);
+
+	// Initialize the clock semaphore
+	union semun { int val; struct semid_ds *buf; ushort * array; } argument;
+	argument.val = 1;							// Set the semaphore value to one
+	if (semctl(semid_clock, 0, SETVAL, argument) == -1) {
+		sprintf(msgerr, "oss: semctl (clock)");
+		perror(msgerr);
+		exit(1);
+	}
+	writelog("Created and initialized clock semaphore to 1", "oss");
+
+	// Initialize the logical clock
+	sem_op(SEMWAIT, semid_clock, "oss");		// wait on clock semaphore
+	ipcd->clock_sec = 0;
+	ipcd->clock_nano = 0;
+	sem_op(SEMSIG, semid_clock, "oss");			// signal on clock semaphore
+	sprintf(msgerr, "Initialized clock");
+	writelog(msgerr, "oss");
+
+	// Initialize the child run status array
+	for (i = 0; i < CHILD_RUN; i++) ipcd->child_running[i] = 0;
+	writelog("Initialized child run status array", "oss");
+
+
+	/*
+		WORK SECTION
+	*/
+
+	// Go into fork loop
+	while (1) {
+
+		// Check for signals
+		if ( ( signum = sigcheck("oss") ) ) {
+			cleanup(signum);					// Call cleanup with whatever the signal was
+			break;
+		}
+
+
+
+		/*
+			FORK AND EXEC CHILDREN
+		*/
+
+		// Only attempt a fork another child if we are below CHILD_RUN processes
+		if ( count_children() < CHILD_RUN ) {
+
+			// Determine which child to fork
+			for (i = 0; i <= CHILD_RUN; i++) {
+				if ( ipcd->child_running[i] == 0 ) {
+					child_sel = i;
+					break;
+				}
+			}
+
+			sprintf(msgerr, "Selected child number %02d to fork", child_sel);
+			writelog(msgerr, "oss");
+
+			fork_child(child_sel);
+		}
+
+
+		/*
+			ADVANCE THE CLOCK
+		*/
+
+		// Wait for the clock to become available
+		sem_op(SEMWAIT, semid_clock, "oss");	// wait on clock semaphore
+
+		// Advance the clock
+		ipcd->clock_milli += rand() % 1000;		//  Random 0 to 999
+		if ( ipcd->clock_milli >= 1000 ) {
+			ipcd->clock_sec++;
+			ipcd->clock_milli -= 1000;
+		}
+		ipcd->clock_nano += rand() % 1000;		//  Random 0 to 999
+		if ( ipcd->clock_nano >= 1000 ) {
+			ipcd->clock_milli++;
+			ipcd->clock_nano -= 1000;
+		}
+
+		// Signal that the clock is now available
+		sem_op(SEMSIG, semid_clock, "oss");		// signal on clock semaphore
+
+		sprintf(msgerr, "Logical clock is now %d.%03d", ipcd->clock_sec, ipcd->clock_milli);
+		sprintf(msgerr, "%s.%03d", msgerr, ipcd->clock_nano);
+		writelog(msgerr, "oss");
+		if (DEBUGM) printf("oss: %s\n", msgerr);
+
+		// Break if we have reached 300 elapsed (logical) seconds
+		if (ipcd->clock_sec >= 300) {
+			sprintf(msgerr, "Reached maximum run time - exiting.");
+			writelog(msgerr, "oss");
+			if (DEBUGM) printf("oss: %s\n", msgerr);
+			cleanup(SIGINT);
+			break;
+		}
+
+
+		// Write log entry and sleep
+		sleep_secs = rand() % 2;				// Random from 0 to 1
+		sprintf(msgerr, "Sleep %d", sleep_secs);
+		writelog(msgerr, "oss");
+		sleep(sleep_secs);
+	}
+d350 1
+a350 1
+	return 0;
+d357 1
+a357 1
+// $Date: 2016/04/23 15:45:42 $
+d360 3
+@
+
+
+1.2
+log
+@Child cleanup bug fixed
+Logging and debugging statements updated
+@
+text
+@d29 1
+d61 1
+a61 1
+	for (i = 0; i < CHILD_MAX; i++) {
+d89 3
+a91 3
+	if (DEBUGM) printf("index\t\tchild_running array\t\tchild_pid array\n");
+	for (i = 0; i < CHILD_MAX; i++) {
+		if (DEBUGM) printf("%02d\t\t\t%d\t\t\t%d\n",i,ipcd->child_running[i],child_pid[i]);
+d161 19
+d251 1
+a251 1
+	for (i = 0; i < CHILD_MAX; i++) ipcd->child_running[i] = 0;
+d274 2
+a275 2
+		// Only attempt a fork another child if we are below CHILD_MAX processes
+		if ( count_children() < CHILD_MAX ) {
+d278 1
+a278 1
+			for (i = 0; i <= CHILD_MAX; i++) {
+d344 1
+a344 1
+// $Date: 2016/04/19 17:51:43 $
+d347 4
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d36 16
+a55 2
+	int status;									// Hold a status code from wait()
+
+d61 6
+a66 8
+		if ( ipcd->child_running[i] || child_pid[i] > 0 ) {
+			if (DEBUGM) printf("Child %02d appears to be running - attempting to kill it\n", i);
+			sprintf(msgerr, "Attempting to terminate child %02d", i);
+			writelog(msgerr, "oss");
+			kill(child_pid[i], termsig);
+			child_pid[i] = wait(&status);
+			sprintf(msgerr, "Child %02d returned %d", i, WEXITSTATUS(status));
+			writelog(msgerr, "oss");
+d87 2
+a88 1
+	int status;									// Used by wait()
+d90 2
+d93 2
+a94 4
+		if ( ipcd->child_running[i] == 0 && child_pid[i] > 0 ) {
+			kill(child_pid[i], SIGTSTP);
+			child_pid[i] = wait(&status);
+			sprintf(msgerr, "Child %02d has exited and returned %d", i, WEXITSTATUS(status));
+d96 8
+d111 1
+d164 1
+a164 1
+		printf("Program will exit normally if still running after 100 seconds.\n");
+d265 1
+a265 1
+			sprintf(msgerr, "Selected child number %d to fork", child_sel);
+d299 2
+a300 2
+		// Break if we have reached 100 elapsed seconds
+		if (ipcd->clock_sec >= 100) {
+d304 1
+d323 7
+a329 4
+// $Author:  $
+// $Date:  $
+// $RCSfile:  $
+// $Log:  $
+@

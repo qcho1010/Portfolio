@@ -1,0 +1,467 @@
+---
+title: "Titanic"
+author: "Kyu Cho"
+date: "February 25, 2016"
+output:
+  html_document:
+    keep_md: yes
+---
+
+## Cross-Validation Function
+This function is to cross validate the testing model for tunning some parameters 
+
+## Introduction
+The sinking of the RMS Titanic is one of the most infamous shipwrecks in history.  On April 15, 1912, during her maiden voyage, the Titanic sank after colliding with an iceberg, killing 1502 out of 2224 passengers and crew. This sensational tragedy shocked the international community and led to better safety regulations for ships.  
+
+One of the reasons that the shipwreck led to such loss of life was that there were not enough lifeboats for the passengers and crew. Although there was some element of luck involved in surviving the sinking, some groups of people were more likely to survive than others, such as women, children, and the upper-class.  
+
+In this challenge, we ask you to complete the analysis of what sorts of people were likely to survive. In particular, we ask you to apply the tools of machine learning to predict which passengers survived the tragedy.  
+
+```{r hide = T, echo = F, warning = F, cache = T}
+library(caret) # ML
+library(randomForest) # rf
+library(e1071) # svm
+library(class) # knn
+library(ipred) # bag
+library(xgboost) #xgboost
+library(nnet) # nnet
+library(rFerns) # rFern
+library(rpart)  # rpart
+library(Rtsne) # 2d visualization
+library(corrplot) # feature plot
+library(Matrix)
+library(parallel)
+library(doParallel)
+```
+
+
+## Loading Data
+```{r hide = T, warning = F, cache = T}
+setwd("E:/Google Drive/kaggle/data")
+train <- read.csv("titanic_train.csv", na.strings=c(""))
+test <- read.csv("titanic_test.csv", na.strings=c(""))
+testId <- test$PassengerId
+```
+
+```{r cache=T}
+check.missing <- function(x) return(paste0(round(sum(is.na(x))/length(x), 4)*100,'%'))
+data.frame(sapply(train, check.missing))
+data.frame(sapply(test, check.missing))
+
+#combine train/test data for pre-processing
+train$Cat <- 'train'
+test$Cat <- 'test'
+test$Survived <- NA
+
+full <- rbind(train, test)
+full$Cabin <- NULL
+
+# Fare
+# simply replace the one missing Fare data with median, due to skewed distribution of Fare
+full$Fare[is.na(full$Fare)] <- median(full$Fare, na.rm=T)
+
+# Embarked
+full <- full[complete.cases(full$Embarked), ] 
+
+# Title
+# Extract Title from Name
+full$Title <- ifelse(grepl('Mr', full$Name),'Mr',
+                     ifelse(grepl('Mrs', full$Name),'Mrs',
+                            ifelse(grepl('Miss', full$Name),'Miss',
+                                    'Nothing'))) 
+
+
+# Adding Family Size
+# Adding Family size because larger family tends to help each other
+full$FamilySize <- ifelse(full$Parch + full$SibSp > 1, 1, 0)
+
+# Sex
+full$Sex <- ifelse(full$Sex == 'female', 1, 0)
+
+# Remove not relevant columns for classification
+col.remove <- c("PassengerId", "Name", "Ticket")
+full <- full[ ,!(names(full) %in% col.remove)]
+
+#factorize the categorical variables
+full <- transform(full,
+                  Survived = factor(Survived),
+                  Sex = factor(Sex),
+                  Embarked = factor(Embarked),
+                  Title = factor(Title)
+                  )
+
+# Age
+# Use rpart to predict missing Age data
+fit.Age <- rpart(Age[!is.na(Age)] ~ Pclass + Sex + SibSp + Parch + Fare + Embarked + Title + FamilySize,
+                 data = full[!is.na(full$Age), ],
+                 method = 'anova')
+full$Age[is.na(full$Age)] <- predict(fit.Age, full[is.na(full$Age), ])
+
+# Adding Mother
+# It increases the survival rate
+full$Mother <- 0
+full$Mother[full$Sex == 1 & full$Parch > 0 & full$Age > 16 & full$Title != 'Miss'] <- 1
+
+# Adding Child
+# It increases the survival rate
+full$Child <- 0
+full$Child[full$Age <= 16] <- 1
+
+# Factor variables into dummy variables
+dummies <- dummyVars("~ Title + Sex + Embarked",
+                     data = full, fullRank = T)
+dummies.df <- as.data.frame(predict(dummies, full))
+dummies.df$Survived <- full$Survived
+dummies.df$Mother <- full$Mother
+dummies.df$Child <- full$Child
+full$Title <- NULL; 
+full$Sex <- NULL; 
+full$Embarked <- NULL; 
+full$Mother <- NULL
+full$Child <- NULL
+full$Survived <- NULL; 
+
+# Change to integer values
+for (col.name in names(dummies.df)) {
+     if (is.numeric(dummies.df[,col.name]))
+          dummies.df[, col.name] <- as.integer(dummies.df[, col.name])
+}
+
+# Normalize
+preproc <- preProcess(full[, !(colnames(full) %in% c("Cat"))], method = c("center", "scale"))
+full <- predict(preproc, full)
+
+# Combind two df
+full  <- cbind(full, dummies.df)
+
+
+#split train/test data
+train <- full[full$Cat == 'train', ]
+test <- full[full$Cat == 'test', ]
+train$Cat <- NULL
+test$Cat <- NULL
+test$Survived <- NULL
+```
+
+## Cross-Validation Function
+This function is to cross validate the testing model for tunning some parameters 
+
+```{r hide = T, warning = F, cache = T}
+cv.kfold <- function(data.df) {
+     # Initialization
+     acc.total <- c()
+     target <- 'Survived'
+     predictors <- setdiff(names(train), target)
+
+     # Shuffling
+     set.seed(1234)
+     data.df <- data.df[sample(nrow(data.df)), ]
+     
+     k <- 6  # k-fold cv
+     for (i in 1:k) {
+          print(paste('cv',i))
+          idx <- (((i-1) * round((1/k)*nrow(data.df))) + 1):((i*round((1/k) * nrow(data.df))))
+          training <- data.df[-idx,]
+          testing <- data.df[idx,]
+          
+#           # RF
+#           mdl.cv <- randomForest(Survived ~., 
+#                                  data = training,
+#                                  replace = F, ntree = 100,
+#                                  do.trace = F, mtry = 7)
+#           pred <- predict(mdl.cv, testing)
+#           acc.cv <- confusionMatrix(pred, testing$Survived)$overall["Accuracy"]
+#           acc.total <- c(acc.total, acc.cv)
+
+          # xgboost
+          training.sparse <- sparse.model.matrix(Survived ~ ., data = training)
+          training.mtx <- xgb.DMatrix(data = training.sparse, 
+                                      label = as.numeric(training$Survived)-1, missing=NA)
+          testing.sparse <- sparse.model.matrix(~ ., data = testing)
+          testing.mtx <- xgb.DMatrix(data = testing.sparse)
+          param <- list(
+               objective = "multi:softmax",     # multiclass classification 
+               booster = "gbtree",              # gbtree or gblinear
+               eta = 0.1,                       # lower value to avoid overfitting
+               subsample = 0.5,                 # .5 for randome selctiong to avoid overfitting
+               max_depth = 11,                  # maximum depth of tree, default 6
+               nthread = 8,                     # number of threads to be used
+               min_child_weight = 10,           # minimum sum of instance weight needed in a child
+               silent = 0,
+               num_class = 2
+          )
+          mdl.cv <- xgb.train(data = training.mtx, params = param, nrounds = 60)
+          pred <- as.factor(predict(mdl.cv, testing.mtx))
+          acc.cv <- confusionMatrix(pred, testing$Survived)$overall["Accuracy"]
+          acc.total <- c(acc.total, acc.cv)
+     }
+     return(mean(acc.total))
+}
+```
+
+## Test with basic models
+```{r cache = T}
+cv.kfold(train)
+train.tf <- train
+inTrain <- createDataPartition(y = train.tf$Survived, p = 0.7,list = FALSE)
+training <- train.tf[inTrain, ]
+testing <- train.tf[-inTrain, ]
+```
+
+## Ensembling by Bagging / Stacking
+Bagging (stands for Bootstrap Aggregation) is the way decrease the variance of your prediction by generating additional data for training from your original dataset using combinations with repetitions to produce multisets of the same cardinality/size as your original data.
+Bagging method gets the cross validation for free. 
+
+Stacking is a similar to boosting: you also apply several models to you original data. The difference here is, however, that you don't have just an empirical formula for your weight function, rather you introduce a meta-level and use another model/approach to estimate the input together with outputs of every model to estimate the weights or, in other words, to determine what models perform well and what badly given these input data. 
+
+In this project, I will use the combination of all ensembling technique. 
+
+
+```{r hide = T, warning = F, cache = T}
+#setup parallel back end to use 8 processors
+cl <- makeCluster(8)
+registerDoParallel(cl)
+
+predictions <- c()
+time.mdl <- system.time(
+predictions <- foreach(m = 1:30, .combine = cbind) %dopar% {
+     require(caret) # ML
+     require(randomForest) # rf
+     require(e1071) # svm
+     require(rFerns) # rFerns
+     require(xgboost) #xgboost
+     require(ipred) # bag
+     require(nnet) # nnet
+     require(rpart) # nnet
+     require(Matrix)
+     require(class) # knn
+     
+     train.tf <- train
+     test.tf <- test
+     target <- c('Survived')
+     predictors <- setdiff(names(train.tf), target)
+     
+     # shuffle by row
+     train.tf <- train.tf[sample(nrow(train.tf)), ]
+     submission <- T
+     if (submission == T) {
+          validation <- test.tf
+          inTrain <- createDataPartition(y = train.tf$Survived, p = 0.7,list = FALSE)
+          training <- train.tf[inTrain, ]
+          testing <- train.tf[-inTrain, ]
+     } else {
+          inBuild <- createDataPartition(y = train.tf$Survived, p = 0.7,list = FALSE)
+          validation <- train.tf[-inBuild, ]
+          buildData <- train.tf[inBuild, ]
+          
+          inTrain <- createDataPartition(y = buildData$Survived, p = 0.7,list = FALSE)
+          training <- buildData[inTrain, ]; 
+          testing <- buildData[-inTrain, ]
+     }
+     
+     
+     ###########################################################
+     # Modeling 01 with original data
+     ###########################################################
+     # rf (RandomForest)
+     mdl.rf <- randomForest(Survived ~ ., 
+                            data = training, 
+                            replace = F, ntree = 100,
+                            do.trace = F, mtry = 7)
+     
+     # svm (Support Vector Machine)
+     mdl.svm <- svm(Survived ~ .,
+                   data = training,
+                   kernel = "radial",
+                   cost = 1,
+                   gamma = 1/ncol(training))
+              
+     # GLM
+     mdl.glm = glm(Survived ~ ., data = training, family = binomial)
+     
+     # rFrn (Random Ferns Classifier)
+     mdl.rFrn <- rFerns(Survived ~ .,
+                   data = testing)
+     
+     # GBM
+     fitControl <- trainControl(method = "adaptive_cv",
+                               number = 5,
+                               repeats = 5)
+     mdl.gbm <- train(Survived ~ .,
+                      data = training,
+                      method = "gbm",
+                      trControl = fitControl,
+                      verbose = FALSE)
+               
+     # nnet
+     mdl.nnet <- train(Survived ~ ., 
+                      data = training,
+                      method = "avNNet",
+                      trControl = trainControl(method = "cv"),
+                      linout = TRUE,
+                      trace = TRUE,
+                      MaxNWts = 13 * (ncol(mtcars[,-1]) + 1) + 13 + 1,
+                      maxit = 10)
+     
+     # knn
+     pred.knn.test <- knn(train = training[ ,predictors], 
+                          test = testing[ ,predictors], 
+                          cl = training[ ,target], 
+                          k = 3)
+     pred.knn.val <- knn(train = training[ ,predictors], 
+                          test = validation[ ,predictors], 
+                          cl = training[ ,target], 
+                          k = 3)
+     
+     # rpart
+     mdl.rp = rpart(Survived ~ ., data=training, method = "class", cp = 0.01, 
+                 control = rpart.control(cp = 0.00001),
+                 parms = list(split = "information"))
+     mdl.rp = prune(mdl.rp, cp=0.01)
+     
+     # xgboost (Extreme Gradient Boosting)
+     training.sparse <- sparse.model.matrix(Survived ~ ., data = training)
+     training.mtx <- xgb.DMatrix(data = training.sparse, 
+                                 label = as.numeric(training$Survived)-1, missing=NA)
+     testing.sparse <- sparse.model.matrix(~ ., data = testing)
+     testing.mtx <- xgb.DMatrix(data = testing.sparse)
+     param <- list(
+          objective = "multi:softmax",     # multiclass classification 
+          booster = "gbtree",              # gbtree or gblinear
+          eta = 0.1,                       # lower value to avoid overfitting
+          subsample = 0.5,                 # .5 for randome selctiong to avoid overfitting
+          max_depth = 11,                  # maximum depth of tree, default 6
+          nthread = 8,                     # number of threads to be used
+          min_child_weight = 10,           # minimum sum of instance weight needed in a child
+          silent = 0,
+          num_class = 2)
+     mdl.xgb <- xgb.train(data = training.mtx, params = param, nrounds = 60)
+     
+     
+     ###########################################################
+     # Predicting 01 with testing data then combind prections
+     ###########################################################
+     pred.rf.test <- predict(mdl.rf, testing)
+     pred.svm.test <- predict(mdl.svm, testing)
+     pred.glm.test <- predict(mdl.glm, testing, type = "response")
+     pred.glm.test <- ifelse(pred.glm.test > .5, 1, 0)
+     pred.rFrn.test <- predict(mdl.rFrn, testing)
+     pred.gbm.test <- predict(mdl.gbm, testing)
+     pred.nnet.test <- predict(mdl.nnet, testing)
+     pred.knn.test <- pred.knn.test
+     pred.rp.test = predict(mdl.rp, testing, type = "class")
+     pred.xgb.test <- predict(mdl.xgb, testing.mtx)
+     
+#      acc.rf.test <- confusionMatrix(pred.rf.test, testing$Survived)$overall["Accuracy"]
+#      acc.svm.test <- confusionMatrix(pred.svm.test, testing$Survived)$overall["Accuracy"]
+#      acc.glm.test <- confusionMatrix(pred.glm.test, testing$Survived)$overall["Accuracy"]
+#      acc.rFrn.test <- confusionMatrix(pred.rFrn.test, testing$Survived)$overall["Accuracy"]
+#      acc.gbm.test <- confusionMatrix(pred.gbm.test, testing$Survived)$overall["Accuracy"]
+#      acc.nnet.test <- confusionMatrix(pred.nnet.test, testing$Survived)$overall["Accuracy"]
+#      acc.knn.test <- confusionMatrix(pred.knn.test, testing$Survived)$overall["Accuracy"]
+#      acc.rp.test <- confusionMatrix(pred.rp.test, testing$Survived)$overall["Accuracy"]
+#      acc.xgb.test <- confusionMatrix(pred.xgb.test, testing$Survived)$overall["Accuracy"]
+#      
+     
+     combinedTestData <- data.frame(
+                                    # pred.rf.test = pred.rf.test,
+                                    pred.svm.test = pred.svm.test,
+                                    pred.glm.test = pred.glm.test,
+                                    # pred.rFrn.test = pred.rFrn.test,
+                                    pred.gbm.test = pred.gbm.test,
+                                    pred.nnet.test = pred.nnet.test,
+                                    # pred.knn.test = pred.knn.test,
+                                    pred.rp.test = pred.rp.test,
+                                    pred.xgb.test = pred.xgb.test,
+                                    Survived = testing$Survived)
+     
+#      combined.acc.test <- data.frame(acc.rf.test = acc.rf.test,
+#                                     acc.svm.test = acc.svm.test,
+#                                     acc.glm.test = acc.glm.test,
+#                                     acc.rFrn.test = acc.rFrn.test,
+#                                     acc.gbm.test = acc.gbm.test,
+#                                     acc.nnet.test = acc.nnet.test,
+#                                     acc.knn.test = acc.knn.test,
+#                                     acc.rp.test = acc.rp.test,
+#                                     acc.xgb.test = acc.xgb.test)
+#      combined.acc.test[,order(-combined.acc.test )]
+     ###########################################################
+     # Moelding 02 with combinded tested predictions
+     ###########################################################
+     comb.test.sparse <- sparse.model.matrix(Survived ~ ., data = combinedTestData)
+     comb.test.mtx <- xgb.DMatrix(data = comb.test.sparse, 
+                                  label = as.numeric(combinedTestData$Survived)-1, missing=NA)
+     val.sparse <- sparse.model.matrix(~ ., data = validation)
+     val.mtx <- xgb.DMatrix(data = val.sparse)
+     comb.fit <- xgb.train(data = comb.test.mtx, params = param, nrounds = 100)
+     comb.pred.test <- predict(comb.fit, comb.test.mtx)
+     
+     
+     ###########################################################
+     # Predicting 02 with validation data then combind prections
+     ###########################################################
+     pred.rf.val <- predict(mdl.rf, validation)
+     pred.svm.val <- predict(mdl.svm, validation)
+     pred.glm.val <- predict(mdl.glm, validation, type = "response")
+     pred.glm.val <- ifelse(pred.glm.val > .5, 1, 0)
+     pred.rFrn.val <- predict(mdl.rFrn, validation)
+     pred.gbm.val <- predict(mdl.gbm, validation)
+     pred.nnet.val <- predict(mdl.nnet, validation)
+     pred.knn.val <- pred.knn.val
+     pred.rp.val <- predict(mdl.rp, validation)
+     pred.xgb.val <- predict(mdl.xgb, val.mtx)
+     
+     combinedValData <- data.frame(
+                                    # pred.rf.val = pred.rf.val,
+                                    pred.svm.val = pred.svm.val,
+                                    pred.glm.val = pred.glm.val,
+                                    # pred.rFrn.val = pred.rFrn.val,
+                                    pred.gbm.val = pred.gbm.val,
+                                    pred.nnet.val = pred.nnet.val,
+                                    # pred.knn.val = pred.knn.val,
+                                    pred.rp.val = pred.rp.val,
+                                    pred.xgb.val = pred.xgb.val)
+     
+     
+     ###########################################################
+     # Prediction 03 with combined validation data for the final
+     ###########################################################
+     comb.val.sparse <- sparse.model.matrix(~ ., data = combinedValData)
+     comb.val.mtx <- xgb.DMatrix(data = comb.val.sparse)
+     comb.pred.val <- predict(comb.fit, comb.val.mtx)
+     
+     predictions <- cbind(predictions, comb.pred.val)
+     # t <- table(comb.pred.val, validation$Survived)
+     # sum(diag(t))/sum(t)
+})
+stopCluster(cl)
+on.exit(stopCluster(cl))
+
+# Cleaning Somedata
+pred.df <- as.data.frame(predictions) 
+colnames(pred.df) <- NULL
+pred.df <- as.data.frame(t(pred.df))
+```
+
+
+## Ensemblinig by Boosting method
+
+Boosting is an approach to calculate the output using several different models and then average the result using a weighted average approach. By combining the advantages and pitfalls of these approaches by varying your weighting formula you can come up with a good predictive force for a wider range of input data, using different narrowly tuned models.
+
+```{r hide = T, warning = F, cache = T}
+# Extracting the highest probability predictions
+
+pred.wted <- c()  # wegihted prediction
+for (i in seq(1, length(pred.df), 1)) {
+     pred.tbl.df <- as.data.frame(table(pred.df[,i])) 
+     idx <- which(pred.tbl.df$Freq == max(pred.tbl.df$Freq))
+     pred.wted <- c(pred.wted, as.vector(pred.tbl.df[idx,]$Var1[1]))
+}
+
+submission.df <- data.frame(cbind(PassengerId = testId, Survived = pred.wted))
+write.csv(submission.df, "titanic_submission_14.csv", row.names=FALSE)
+
+print(paste(pred.wted))
+```
+
+Hi I have been playing around with this data for about a month and have managed to get up to .8134, with additional features and random forest in caret package in R (so it tunes itself) but I can't get any better! I added a feature family size and predicted missing ages as suggested in one of the tutorials. I came up with a few other ideas. Firstly, after predicting ages I tried making age into a factor of child/adult which improved my score . I found cutoff age of 16 was best. Also I played around with the fares. I gave the missing fares the median fare for their respective PClass and port of embarkement. I noticed that the fares seem to be family/group fares and that family members on the whole travel with the same ticket and fare, so I made a new feature by dividing the fare by the number of passengers travelling on that same ticket. I ended up including both the original fare and my fare per passenger in the model. I also noticed that some consecutive ticket numbers seem to belong to families so I extracted the number part of the ticket and treated the ticket numbers as numeric values to identify families/groups in an additional way. Also I extracted the letter out of the cabin numbers and predicted missing values by ticket number, pclass, port of embarkment,fare and fare per passenger. I saw some of the high scorers used different features like mother/child, and cabin position (left, right,center) and many of them used cforest instead of random forest. In fact many of them seem to have just run someone's code to get the high result. I tried cforest but random forest gave me a better result. Mother/child seemed to make overfitting together with my other features because the accuracy went down and I didn't try cabin position (it's by clustering cabin numbers). I think I've had enough of this one now and plan to move on to another challenge, though It'd be great to hear any further suggestions! Good luck!

@@ -1,0 +1,227 @@
+---
+title: "Week7-2_Policeman"
+author: "Kyu Cho"
+date: "July 15, 2015"
+output: html_document
+---
+
+```{r cache=TRUE}
+library(ggplot2)
+library(maps)
+library(ggmap)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data7")
+
+murders = read.csv("murders.csv")
+mvt = read.csv("mvt.csv")
+summary(mvt)
+str(mvt)
+```
+
+## Clean data
+```{r cache=TRUE}
+# Convert the Date variable to a format that R will recognize:
+mvt$Date = strptime(mvt$Date, format="%m/%d/%y %H:%M")
+
+# Extract the hour and the day of the week:
+mvt$Weekday = weekdays(mvt$Date)
+mvt$Hour = mvt$Date$hour
+
+# Let's take a look at the structure of our data again:
+str(mvt)
+
+# Create a simple line plot - need the total number of crimes on each day of the week. We can get this information by creating a table:
+table(mvt$Weekday)
+
+# Save this table as a data frame:
+WeekdayCounts = as.data.frame(table(mvt$Weekday))
+str(WeekdayCounts) 
+
+```
+
+## Build a plot
+```{r cache=TRUE}
+# Create our plot,  group = 1 make it to one line.
+ggplot(WeekdayCounts, aes(x=Var1, y=Freq)) + geom_line(aes(group=1))  
+
+# Make the "Var1" variable an chronological order instead of an alphabetical order.
+WeekdayCounts$Var1 = factor(WeekdayCounts$Var1, ordered=TRUE, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday","Saturday"))
+
+# Try again:
+ggplot(WeekdayCounts, aes(x=Var1, y=Freq)) + 
+    geom_line(aes(group=1))
+
+# Change our x and y labels:
+ggplot(WeekdayCounts, aes(x=Var1, y=Freq)) + geom_line(aes(group=1), linetype=2, alpha=0.3) + xlab("Day of the Week") + 
+    ylab("Total Motor Vehicle Thefts")
+```
+
+# Adding Weekday variable with heatmap
+## Clean data
+```{r cache=TRUE}
+# Create a counts table for the weekday and hour:
+table(mvt$Weekday, mvt$Hour)
+
+# Save this to a data frame:
+DayHourCounts = as.data.frame(table(mvt$Weekday, mvt$Hour))
+
+str(DayHourCounts)
+
+# Convert the second variable, Var2, from factor from numeric
+DayHourCounts$Hour = as.numeric(as.character(DayHourCounts$Var2))
+```
+
+## Build a plot
+```{r cache=TRUE}
+# Create out plot:
+ggplot(DayHourCounts, aes(x=Hour, y=Freq)) + 
+    geom_line(aes(group=Var1))
+
+# Change the colors
+ggplot(DayHourCounts, aes(x=Hour, y=Freq)) + 
+    geom_line(aes(group=Var1, color=Var1), size=2)
+
+# Separate the weekends from the weekdays:
+DayHourCounts$Type = ifelse(
+    (DayHourCounts$Var1 == "Sunday") | (DayHourCounts$Var1 == "Saturday"), 
+    "Weekend", "Weekday")
+
+# Redo our plot, this time coloring by Type:
+ggplot(DayHourCounts, aes(x=Hour, y=Freq)) + 
+    geom_line(aes(group=Var1, color=Type), size=2) 
+  
+
+# Make the lines a little transparent:
+ggplot(DayHourCounts, aes(x=Hour, y=Freq)) + 
+    geom_line(aes(group=Var1, color=Type), size=2, alpha=0.5) 
+```
+
+## Build a heat map
+```{r cache=TRUE}
+# Fix the order of the days:
+DayHourCounts$Var1 = factor(DayHourCounts$Var1, ordered=TRUE, levels=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+
+# Make a heatmap:
+ggplot(DayHourCounts, aes(x=Hour, y=Var1)) + 
+    geom_tile(aes(fill=Freq))
+
+# Change the label on the legend, and get rid of the y-label:
+ggplot(DayHourCounts, aes(x=Hour, y=Var1)) + 
+    geom_tile(aes(fill=Freq)) + 
+    scale_fill_gradient(name="Total MV Thefts") +
+    theme(axis.title.y=element_blank())
+  
+# Change the color scheme
+ggplot(DayHourCounts, aes(x=Hour, y=Var1)) + 
+    geom_tile(aes(fill=Freq)) + 
+    scale_fill_gradient(name="Total MV Thefts", low="white", high="red") +
+    theme(axis.title.y = element_blank())
+
+```
+
+# Build a google map
+## Clean data
+```{r cache=TRUE}
+# Load a map of Chicago into R:
+chicago = get_map(location="chicago", zoom=11)
+ggmap(chicago)
+
+# Plot the first 100 motor vehicle thefts:
+ggmap(chicago) + geom_point(data=mvt[1:100,], aes(x=Longitude, y=Latitude))
+
+# Round our latitude and longitude to 2 digits of accuracy, and create a crime counts data frame for each area:
+LatLonCounts = as.data.frame(table(round(mvt$Longitude,2), round(mvt$Latitude,2)))
+str(LatLonCounts)
+
+# Convert our Longitude and Latitude variable from factor var. to numeric var.
+LatLonCounts$Long = as.numeric(as.character(LatLonCounts$Var1))
+LatLonCounts$Lat = as.numeric(as.character(LatLonCounts$Var2))
+
+# Plot these points on our map:
+ggmap(chicago) + 
+    geom_point(data=LatLonCounts, aes(x=Long, y=Lat, color=Freq, size=Freq))
+
+# Change the color scheme:
+ggmap(chicago) + 
+    geom_point(data=LatLonCounts, aes(x=Long, y=Lat, color=Freq, size=Freq)) +
+    scale_colour_gradient(low="yellow", high="red")
+
+# We can also use the geom_tile geometry
+ggmap(chicago) + geom_tile(data=LatLonCounts, aes(x=Long, y=Lat, alpha=Freq), fill="red")
+
+
+# Remove red squre in the water
+LatLonCounts2 = subset(LatLonCounts, Freq > 0)
+ggmap(chicago) + 
+    geom_tile(data=LatLonCounts2, aes(x=Long, y=Lat, alpha=Freq), fill="red")
+```
+
+# FBI
+## Load map
+```{r cache=TRUE}
+str(murders)
+
+# Load the map of the US
+statesMap = map_data("state")
+str(statesMap)
+
+# Plot the map:
+ggplot(statesMap, aes(x=long, y=lat, group=group)) + 
+    geom_polygon(fill="white", color="black") 
+```
+
+## Clean data
+```{r cache=TRUE}
+# Preprocess to merge the two data frame by
+# Create a new variable called region with the lowercase names to match the statesMap:
+murders$region = tolower(murders$State)
+
+# Join the statesMap data and the murders data into one dataframe:
+# by="region" the identifier to use to merge the rows.
+murderMap = merge(statesMap, murders, by="region")
+str(murderMap)
+```
+
+## Build a google map by Murders, and Population
+```{r cache=TRUE}
+# Plot the number of murder on our map of the United States:
+ggplot(murderMap, aes(x=long, y=lat, group=group, fill=Murders)) +
+    geom_polygon(color="black") + 
+    scale_fill_gradient(low="black", high="red", guide="legend")
+
+# Plot a map of the population:
+ggplot(murderMap, aes(x=long, y=lat, group=group, fill=Population)) +
+    geom_polygon(color="black") + 
+    scale_fill_gradient(low="black", high="red", guide="legend")
+```
+We have a population map here which looks exactly the same as our murders map. So we need to plot the murder rate instead of the number of murders to make sure we're not just plotting a population map.
+
+## Build a google map by murders rate
+```{r cache=TRUE}
+# Create a new variable that is the number of murders per 100,000 population:
+murderMap$MurderRate = murderMap$Murders / murderMap$Population * 100000
+
+# Redo our plot with murder rate:
+ggplot(murderMap, aes(x=long, y=lat, group=group, fill=MurderRate)) + 
+    geom_polygon(color="black") + 
+    scale_fill_gradient(low="black", high="red", guide="legend")
+
+# Redo the plot, removing any states with murder rates above 10:
+ggplot(murderMap, aes(x=long, y=lat, group=group, fill=MurderRate)) +
+    geom_polygon(color="black") + 
+    scale_fill_gradient(low="black", high="red", guide="legend", limits=c(0,10))
+```
+
+## Build a google map by gun owndership rate
+```{r cache=TRUE}
+# Create a new variable that is the number of gun owner per 100,000 population:
+murderMap$GunOwnerRate = murderMap$GunOwnership / murderMap$Population * 100000
+
+# Redo our plot with murder rate:
+ggplot(murderMap, aes(x=long, y=lat, group=group, fill=GunOwnerRate)) +
+    geom_polygon(color="black") + 
+    scale_fill_gradient(low="black", high="red", guide="legend")
+```
+
+heatmap can visualize data that will be too big for a talbe.  
+Plotting data on maps is much more effeict that a table for location based on data.

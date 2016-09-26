@@ -1,0 +1,388 @@
+head	1.6;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.6
+date	2015.10.26.08.39.28;	author o-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2015.10.25.09.40.55;	author o-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2015.10.24.01.50.17;	author o-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2015.10.23.05.11.54;	author o-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2015.10.22.02.30.37;	author o-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2015.10.22.01.58.18;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.6
+log
+@*** empty log message ***
+@
+text
+@#include "oss.h"						// IPC Data structure
+
+ShmPTR_t *ShmPTR;						// Pointer for shared memory
+int ShmID;										// Shared memory ID
+int SemID;										// Semaphore ID
+int SigNUM;										// Hold a signal number
+int childPID[MAX];								// Array of PIDs for child processes
+int pcbTaken[MAX];							// "PCB taken" array/bit vector
+char buff[50] = "";							// Hold a message to be passed to perror() or writelog()
+
+int main(int argc, char *argv[]) {
+	signal(SIGINT, sig_handler);
+	srand(time(NULL));						// Seed the random number generator
+	int childIndex;								// Child index
+	int selChild;									// Selcted child to fork
+	int ShmKEY = ftok(".", 40);			// Shared memory key
+	int SemKEY = ftok(".", 41);			// Semaphore key
+	int sleepSecs;								// Random sleep variable
+	int pcbIndex = 0;							// Relative search position for available PCB
+	int i, x;											// Iteration variables
+	float childWait = 0;						// Child wait time calculation
+	float currTime = 0;						// Used in calculation of childWait
+	float maxWait;								// Maximum scheduling calculation result
+	float curWait = 0;							// Result of the current scheduling calculation
+	int nextChild = 0;							// The child that will be scheduled
+
+	printf("It will run for 100 seconds\n");
+	
+	// Shared Memory Initialization
+	ShmID = shmget(ShmKEY, ShmPTR_SZ, 0600 | IPC_CREAT);
+	if (ShmID == -1) {
+		perror("shmget Err");
+		exit(1);
+	}
+	if (!(ShmPTR = (ShmPTR_t *)(shmat(ShmID, 0, 0)))) {
+		perror("shmat Err");
+		exit(1);
+	}
+	writelog("Successfully allocated and attached to shared memory for IPC");
+
+	// Value in Shared Memory Initialization
+	ShmPTR->secTime = 0;
+	ShmPTR->nanoTime = 0;
+	ShmPTR->wait = 1;
+	ShmPTR->wait_tt= 0;
+	ShmPTR->fork_tt = 0;
+	ShmPTR->done_tt = 0;
+	ShmPTR->quantum = QUANTUM;
+	for (i = 0; i < MAX; pcbTaken[i++] = 0);	
+	sprintf(buff, "Using time quantum of %d", QUANTUM);
+	writelog(buff);
+
+	
+	// Semaphore Memory Initialization
+	if ((SemID = semget(SemKEY, 1, 0600 | IPC_CREAT)) == -1) {
+		sprintf(buff, "oss: semget");
+		perror(buff);
+		exit(1);
+	}
+	union semun { int val; struct semid_ds *buf; ushort * array; } argument;
+	argument.val = 1;							// Set the semaphore value to one
+	if (semctl(SemID, 0, SETVAL, argument) == -1) {
+		sprintf(buff, "oss: semctl");
+		perror(buff);
+		exit(1);
+	}
+	writelog("Successfully created and initialized scheduling semaphore");
+
+	// Fork Multiple Children
+	for (i = 0; i < MAX; forkChild(i++));
+	
+	// Now every thing is ready
+	ShmPTR->wait  = 0;
+	
+	while (1) {
+		// Maintain the number of process up to 18
+		if (countChild() < MAX) {
+			for (childIndex = 0; childIndex <= MAX; childIndex++) {
+				if ((childIndex + pcbIndex ) >= MAX) 
+					x = childIndex;
+				else 
+					x = childIndex + pcbIndex;
+				if (!pcbTaken[x]) {
+					pcbIndex = x;
+					selChild = x;
+					break;
+				}
+			}
+			sprintf(buff, "selChild child number %d to fork", selChild);
+			writelog(buff);
+			printf("Work Done\n Create New Process\n");
+			forkChild(selChild);	// Create Slected Process
+		}
+	
+		// Received the Schaduling Signal
+		waitSem(SemID);
+		
+		// Schaduling Algorithm 
+		// Selecting the next process that has the highest ratio of total wait time / total cpu using time
+		maxWait = 0;
+		for (i = 0; i < MAX; i++) {
+			currTime = (float)ShmPTR->secTime + ((float)ShmPTR->nanoTime / 1000);
+			childWait = ( currTime - ShmPTR->childPCB[i].prevTime );
+			
+			// Updating the values
+			ShmPTR->wait_tt = ShmPTR->wait_tt + childWait;
+			ShmPTR->cpu_tt = ShmPTR->cpu_tt+ ShmPTR->childPCB[i].cpu_tt;
+			
+			if ( ShmPTR->childPCB[i].cpu_tt > 0 ) 
+				curWait = childWait / ShmPTR->childPCB[i].cpu_tt;
+			else 
+				curWait = childWait;
+			if ( curWait > maxWait ) {
+				nextChild = i;
+				maxWait = curWait;
+			}
+		}
+		sprintf(buff, "Dispatching process ID %d", childPID[nextChild]);
+		writelog(buff);
+		ShmPTR->dispatchPID = childPID[nextChild];
+		ShmPTR->childPCB[nextChild].run = 0;
+
+		// Updating clock
+		ShmPTR->secTime++;
+		ShmPTR->nanoTime = 1 + (rand() % 1000);	
+		sprintf(buff, "Logical clock is now %d.%04d", ShmPTR->secTime, ShmPTR->nanoTime);
+		writelog(buff);
+
+		printf("%d\n", ShmPTR->secTime);
+		if (ShmPTR->secTime >= 100) {
+			sprintf(buff, "Reached maximum run time - exiting.");
+			writelog(buff);
+			break;
+		}
+
+		sleepSecs = rand() % 2;				
+		sprintf(buff, "Sleep %d", sleepSecs);
+		writelog(buff);
+		sleep(sleepSecs);
+	}
+	// Report Final Result
+	report();
+	
+	cleanup(15);	
+	return 0;
+}
+
+// Signal Handling Function
+void sig_handler(int signo) {
+	fprintf(stderr,"\nParent: Dying because of the inturrupt\n");
+	cleanup(signo);
+}
+
+// Log Function
+void writelog(char *msg) {
+	FILE *fp;
+	if (!(fp = fopen("oss.log", "a"))) {
+		perror("oss: opening oss.log");
+		exit(1);
+	}
+	time_t now;
+	struct tm *timeinfo;
+	time(&now);
+	timeinfo = localtime(&now);
+	
+	fprintf(fp, "%02d:%02d:%02d\t", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+	fprintf(fp, "oss:\t%s\n", msg);
+	fclose(fp);
+}
+
+// Cleaning up Funciton
+void cleanup(int termsig) {
+	int status;									// Hold a status code from wait()
+	writelog("Cleaning up memories");
+	int i;
+	for (i = 0; i < MAX; i++) {
+		if (pcbTaken[i] ) {
+			sprintf(buff, "Terminating child %02d", i);
+			writelog(buff);
+			kill(childPID[i], termsig);
+			childPID[i] = wait(&status);
+			sprintf(buff, "Child %02d returned %d", i, WEXITSTATUS(status));
+			writelog(buff);
+		}
+	}
+	int ShmPTR_rel = shmctl(ShmID, IPC_RMID, (struct shmid_ds *)NULL);
+	if (ShmPTR_rel != 0) 
+		fprintf(stderr, "shmctl Err\n");
+	else 
+		writelog("Released shared memory successfully");
+	if ((semctl(SemID, 0, IPC_RMID, 1) == -1) && (errno != EINTR)) {
+		perror("semctl Err\n");
+	}
+	else 
+		writelog("Removed semaphore successfully");
+	return;
+}
+
+//  PCB Initialization Function
+void initPCB(int i) {
+	ShmPTR->childPCB[i].cpu_tt = 0;
+	ShmPTR->childPCB[i].sys_tt = 0;
+	ShmPTR->childPCB[i].prevUsed = 0;
+	ShmPTR->childPCB[i].prevTime = (float)ShmPTR->secTime + ((float)ShmPTR->nanoTime / 1000);
+	ShmPTR->childPCB[i].done = 0;
+	ShmPTR->childPCB[i].run = 0;
+	
+	sprintf(buff, "Initialized PCB for child %d", i);
+	writelog(buff);
+	return;
+}
+
+// Wait Function
+void waitSem(int semid) {
+	struct sembuf sbuf;							// Semaphore operation struct
+	sbuf.sem_num = 0;							
+	sbuf.sem_op = -1;							
+	sbuf.sem_flg = 0;							
+	if (semop(semid, &sbuf, 1) == -1)  {
+			signal(SIGINT, sig_handler);
+			cleanup(SigNUM);
+			exit(0);
+	}
+	return;
+}
+
+// Counting Child Function
+int countChild() {
+	int i, count = 0;
+	int status;								
+	for (i = 0; i < MAX; i++) {
+		if ( ShmPTR->childPCB[i].done == 1 ) {
+			kill(childPID[i], SIGTSTP);
+			childPID[i] = wait(&status);
+			sprintf(buff, "Child %02d returned %d", i, WEXITSTATUS(status));
+			writelog(buff);
+			sprintf(buff, "Child %02d has exited; reclaiming PCB...", i);
+			writelog(buff);
+			initPCB(i);
+			pcbTaken[i] = 0;
+		}
+
+		if ( pcbTaken[i] ) count++;
+	}
+	sprintf(buff, "Current child count is %d", count);
+	writelog(buff);
+	return count;
+}
+
+// Forking Child Function
+void forkChild(int child) {
+	char child_arg[5] = "";						
+
+	if ((childPID[child] = fork()) < 0) {
+		sprintf(buff, "oss: fork() for child %02d", child);
+		perror(buff);
+		writelog("Error forking child");
+		cleanup(SIGTERM);
+		exit(1);
+	} else {
+		pcbTaken[child] = 1;
+		if (childPID[child] == 0) {
+			sprintf(child_arg, "%02d", child);
+			execl("./uproc", "uproc", child_arg, (char *)NULL);
+			sprintf(buff, "oss: exec child %02d after fork", child);
+			perror(buff);
+		} else {
+			sprintf(buff, "Forked process ID %d for child %02d", childPID[child], child);
+			writelog(buff);
+			sprintf(buff, "Setting child PCB %d to 'allocated'", child);
+			writelog(buff);
+		}
+	}
+	return;
+}
+
+// Final Report Function
+void report() {
+	printf("=== Total Processes ===\n");
+	printf("Total Fork: %d \n", ShmPTR->fork_tt);
+	printf("Total Done: %.d \n", ShmPTR->done_tt);
+	printf("Total Abandoned: %d \n\n", (ShmPTR->fork_tt-ShmPTR->done_tt));
+	
+	printf("=== Averages for Completed Processes ===\n");
+	printf("Waiting Time in System: %.2fms/child \n", (ShmPTR->wait_tt/ShmPTR->fork_tt));
+	printf("CPU Running Time : %.2fms/child \n", (ShmPTR->cpu_tt/ShmPTR->fork_tt));
+	printf("Burst Length : %.2fs \n\n", ((ShmPTR->fork_tt*200)/ShmPTR->cpu_tt));
+
+	printf("Total Time in System: %ds \n\n", ShmPTR->secTime);
+}
+
+@
+
+
+1.5
+log
+@Added Mics Functions
+Fixed Many Bugs
+@
+text
+@d171 56
+a290 1
+
+@
+
+
+1.4
+log
+@Added wirtelog function
+@
+text
+@d171 66
+@
+
+
+1.3
+log
+@Added signal Handler
+@
+text
+@d154 17
+@
+
+
+1.2
+log
+@fixed bug
+reviced schaduling algoritm
+@
+text
+@d147 7
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 146
+@

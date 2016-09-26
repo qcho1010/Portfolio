@@ -1,0 +1,178 @@
+---
+title: "Random Forest on a Few Blocks"
+author: "Kyu Cho"
+date: "May 25, 2016"
+output: html_document
+---
+In this competition we're given around 30 million (simulated) check-ins on Facebook in a 10km by 10km grid. The goal is to build a model that predicts what business a user checks into based on spatial and temporal information. The tricky part here is that there are around 100k different classes(place_id's) so most supervised learning techniques won't work on the entire dataset. However most classes are clustered in only certain parts of the grid so the idea I'll pursue here is to select a small-ish square within the grid and try to see if we can do better within the small square. First I'll do some exploratory data analysis in the smaller square then I'll use a random forest algorithm for prediction and finally, I'll analyze the results.
+
+## Reading and Cleaning:
+
+```{r echo=F, warning=F, cache=T}
+library(data.table) #reading in the data
+library(dplyr) #dataframe manipulation
+library(ggplot2) #viz
+library(ranger) #the random forest implementation
+library(plotly) #3D plotting
+library(tidyr) #dataframe manipulation
+
+setwd("E:/Google Drive/kaggle/03-facebook/data")
+fb <- fread("train.csv", integer64 = "character", showProgress = FALSE)
+```
+
+Now we'll select a subset of the data - I'll just pick a random 250 meters by 250 meters square in our imaginary Facebook city.
+```{r cache=T}
+fb <- fb %>% 
+     filter(x >1, x <1.25, y >2.5, y < 2.75)
+head(fb, 3)
+```
+Notice that time is given to us simply as a numeric value.  
+There have been quite a few great scripts exploring the timestamp and the unit of time here is almost certainly minutes.  
+Since businesses tend to run on daily cycles let's extract a new feature called hour that gives the hour in the day (from 0 to 24).
+
+```{r cache=T}
+fb$hour <- (fb$time/60) %% 24
+```
+
+We will split our dataset into a training and validation set so we can check the results.  
+We choose the validation set to be the more recent check-ins so that our validation structure is similar to the one kaggle does behind the scenes on the test set.
+
+```{r cache=T}
+small_train <- fb[fb$time < 7.3e5,]
+small_val<- fb[fb$time >= 7.3e5,] 
+```
+
+
+## Exploratory Analysis:
+Let's take a look at our training set:
+```{r cache=T}
+ggplot(small_train, aes(x, y )) +
+    geom_point(aes(color = place_id)) + 
+    theme_minimal() +
+    theme(legend.position = "none") +
+    ggtitle("Check-ins colored by place_id")
+```
+
+Ok, so the clusters are pretty visible, however there seems to be quite a lot of overlap - the place_id's are definitely not separable.  
+Let's try plotting them using the hour component as our third variable.  
+We will just look at the most popular clusters outherwise it gets really messy:
+
+```{r cache=T}
+ids <- small_train %>% 
+     count(place_id) %>% 
+     filter(n > 500)
+small_trainz <- small_train[small_train$place_id %in% ids$place_id, ]
+
+plot_ly(data = small_trainz, x = x , y = y, z = hour, color = place_id,  
+        type = "scatter3d", mode = "markers") %>% 
+     layout(title = "Place_id's by position and Time of Day")
+```
+
+Whoa very cool! Adding the time dimension definitely helps.  
+The daily cycles are clearly visible above - for certain places the check in's stop for a few hours and then start picking up again.  
+Other businesses have quite a few peaks throughtout the day, and the peaks tend to be rather different for different businesses.  
+Also keep in mind that the upper z-square (z = 24) and the lower z-square (z = 0) are really the same thing since time of day is, well, prediodic.  
+So really this thing we're looking at is better viewed not as a cube but as a (flat) solid torus!
+
+However we still might have too many classes for something like random forest to work at its best. Let's check it out:
+
+```{r cache=T}
+length(unique(small_train$place_id))
+```
+
+Let's for now remove the place_id's that have only three or less occurences in the city are we picked.  
+This will decrease the number of classes by a lot.  
+Since we have a validation set we can always come back and change the filter level to see if we get better results.  
+
+```{r cache=T}
+ids <- small_train %>% 
+     count(place_id) %>% 
+     filter(n > 3)
+small_train <- small_train[small_train$place_id %in% ids$place_id,]
+length(unique(small_train$place_id))
+```
+Sweet, now we have 15595 training examples and 224 classes and we're ready to do some machine learning!  
+  
+## The Forest:
+Let's use the ranger implementation of the random forest algorithm.  
+The ranger package tends to be significantly faster(around 5x) and more memory efficient than the randomForest implementation   
+and we'll need as much of that as we can get for this problem.
+
+```{r cache=T}
+set.seed(131L)
+small_train$place_id <- as.factor(small_train$place_id) # ranger needs factors for classification
+model_rf <- ranger(place_id ~ x + y + accuracy + hour,
+                   small_train,
+                   num.trees = 100,
+                   write.forest = TRUE,
+                   importance = "impurity")
+```
+
+```{r cache=T}
+pred <- predict(model_rf, small_val)
+pred <- pred$predictions
+accuracy <- mean(pred == small_val$place_id) 
+accuracy
+```
+
+We get an accuracy of 0.5240919.  
+Hey not bad! Keep in mind that the evaluation metric for this competition is mean average precision at 3 so predicting votes/probabilities by class   
+and then counting the top three id's is guaranteed to improve our score.  
+But for simplicity we'll just stick to accuracy.  
+  
+Let's take take a look at the predictions on the validation set:  
+```{r cache=T}
+small_val$Correct <- (pred == small_val$place_id)
+
+ggplot(small_val, aes(x, y)) +
+    geom_point(aes(color = Correct)) + 
+    theme_minimal() +
+    scale_color_brewer(palette = "Set1") +
+    ggtitle("RF Results")
+```
+
+It does seem that the correctly identified check-ins are more "clustered" while the wrongly identified ones are more uniformly distributed but other than that no clear patters here.
+  
+Let's also take a look at what kind of id's our random forest gets wrong.  
+To do this we will look at accuracy by id and also plot the id's based on how often they appear in the validation set.  
+We see below that our model is doing actually really great on the more popular id's(more blue on the right).  
+However it loses when it looks at id's that appear only a few times.
+
+```{r cache=T}
+#reordering the levels based on counts:
+small_val$place_id <- factor(small_val$place_id,
+                             levels = names(sort(table(small_val$place_id), decreasing = TRUE)))
+
+small_val %>% 
+    ggplot(aes(x = place_id)) + geom_bar(aes(fill = Correct)) + 
+    theme_minimal() +
+    theme(axis.text.x = element_blank()) +
+    ggtitle("Prediction Accuracy by ID and Popularity") +
+    scale_fill_brewer(palette = "Set1")
+```
+We see above that our model is doing actually really good on the more popular id's(the blue area on the right).  
+However it loses when it looks at id's that appear only a few times.  
+  
+Let's look at the importance of our variables as well:
+```{r cache=T}
+data.frame(as.list(model_rf$variable.importance)) %>% gather() %>% 
+    ggplot(aes(x = reorder(key, value), y = value)) +
+    geom_bar(stat = "identity", width = 0.6, fill = "grey") +
+    coord_flip() +
+    theme_minimal() +
+    ggtitle("Variable Importance (Gini Index)") +
+    theme(axis.title.y = element_blank()) 
+```
+
+This is quite interesting. First of all the y variable is more important than the x coordinate. This is in line with a lot of observations in other scripts: the variance by place_id is significantly higer in the x direction than in the y direction. This means that the y axis is a better predictior of place_id and the random forest figures this out on its own. hour is also a good predictor but less so than the spatial features - this makes sense since the location of a check-in should be more important than the time of the check-in. And lastly we see that accuracy is important. Accuracy is a bit misterious since we don't get an actual definition for it is but at least the model tells us it's somewhat important.
+
+## Further Directions:  
+So where to go from here?  
+  
+Here are a few sugesstions:  
+  
+- play with how big the grid size is and see if you can get better validation results  
+- try different areas on the map  
+- try different models (maybe xgboost or somehing simple like logistic regression)  
+- split the grid into n*n little squares and run you algorithm in each of the squares - this might take a while though.  
+- Feel free to fork this script and explore these ideas more.  

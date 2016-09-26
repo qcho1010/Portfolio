@@ -1,0 +1,152 @@
+---
+title: "Week3-5"
+author: "Kyu Cho"
+date: "Monday, June 29, 2015"
+output: html_document
+---
+# Inrodcution
+In many criminal justice systems around the world, inmates deemed not to be a threat to society are released from prison under the parole system prior to completing their sentence. They are still considered to be serving their sentence while on parole, and they can be returned to prison if they violate the terms of their parole.
+
+Parole boards are charged with identifying which inmates are good candidates for release on parole. They seek to release inmates who will not commit additional crimes after release. In this problem, we will build and validate a model that predicts if an inmate will violate the terms of his or her parole. Such a model could be useful to a parole board when deciding to approve or deny an application for parole.
+
+For this prediction task, we will use data from the United States 2004 National Corrections Reporting Program, a nationwide census of parole releases that occurred during 2004. We limited our focus to parolees who served no more than 6 months in prison and whose maximum sentence for all charges did not exceed 18 months. The dataset contains all such parolees who either successfully completed their term of parole during 2004 or those who violated the terms of their parole during that year. The dataset contains the following variables:
+
+# Variables
+- male: 1 if the parolee is male, 0 if female
+- race: 1 if the parolee is white, 2 otherwise
+- age: the parolee's age (in years) when he or she was released from prison
+- state: a code for the parolee's state. 2 is Kentucky, 3 is Louisiana, 4 is Virginia, and 1 is any other state. The three states were selected due to having a high representation in the dataset.
+- time.served: the number of months the parolee served in prison (limited by the inclusion criteria to not exceed 6 months).
+- max.sentence: the maximum sentence length for all charges, in months (limited by the inclusion criteria to not exceed 18 months).
+- multiple.offenses: 1 if the parolee was incarcerated for multiple offenses, 0 otherwise.
+- crime: a code for the parolee's main crime leading to incarceration. 2 is larceny, 3 is drug-related crime, 4 is driving-related crime, and 1 is any other crime.
+- violator: 1 if the parolee violated the parole, and 0 if the parolee completed the parole without violation.
+
+```{r cache=TRUE}
+setwd("D:/Google Drive/College/4-The Analytics Edge/data3")
+parole = read.csv("parole.csv")
+summary(parole)
+str(parole)
+head(parole)
+```
+
+# PREPARING THE DATASET
+```{r cache=TRUE}
+# How many of the parolees in the dataset violated the terms of their parole?
+sum(parole$violator==1)
+
+# Make factor variables into factor format
+parole$state <- as.factor(parole$state)
+parole$crime <- as.factor(parole$crime)
+```
+
+# SPLITTING INTO A TRAINING AND TESTING SET  
+```{r cache=TRUE}
+set.seed(144)
+library(caTools)
+
+split = sample.split(parole$violator, SplitRatio = 0.7)
+train = subset(parole, split == TRUE)
+test = subset(parole, split == FALSE)
+```
+SplitRatio=0.7 causes split to take the value TRUE roughly 70% of the time, so train should contain roughly 70% of the values in the dataset.  
+
+# BUILDING A LOGISTIC REGRESSION MODEL
+```{r cache=TRUE}
+violator_model = glm(violator ~ ., data = train, family = "binomial")
+summary(violator_model)
+
+# Investigate variable multiple.offenses
+exp(1.6119919)
+```
+Our model predicts that a parolee who committed multiple offenses has 5.01 times higher odds of being a violator than a parolee who did not commit multiple offenses but is otherwise identical.  
+
+Proof.
+ln(odds of A) = ln(odds of B) + 1.61  
+exp(ln(odds of A)) = exp(ln(odds of B) + 1.61)  
+exp(ln(odds of A)) = exp(ln(odds of B)) * exp(1.61)  
+odds of A = exp(1.61) * odds of B  
+odds of A= 5.01 * odds of B  
+
+Basic Rule for the proof.
+e^(a+b) = e^a * e^b  
+e^(ln(x)) = x  
+
+Consider a parolee who is male, of white race, aged 50 years at prison release, from the state of Maryland, served 3 months, had a maximum sentence of 12 months, did not commit multiple offenses, and committed a larceny.  
+```{r cache=TRUE}
+# According to the model, what are the odds this individual is a violator?
+odds <- exp(-4.2411574 + 0.3869904*1 + 0.8867192*1 + 50*-0.0001756 + 3*-0.1238867 + 12*0.0802954 + 0.6837143)
+odds
+
+# According to the model, what is the probability this individual is a violator?
+prob <- 1/(1+(1/odds))
+prob
+```
+
+#EVALUATING THE MODEL ON THE TESTING SET  
+```{r cache=TRUE}
+prediction = predict(violator_model, newdata=test, type="response")
+max(prediction)
+
+table(test$violator, prediction > .5)
+
+# Accuracy
+(167+12)/(167+12+11+12)
+
+# Basline accuracy
+(167+12)/(167+12+11+12)
+
+# Sensitivity
+(12)/(12+11)
+
+# Specivity
+(167)/(167+12)
+
+```
+
+or 
+```{r cache=TRUE}
+# In the following questions, evaluate the model's predictions on the test set using a threshold of 0.5
+TP <- sum(prediction>.5 & test$violator)
+FN <- sum(prediction<=.5 & test$violator)
+sensitivity <- TP / (TP+FN)
+sensitivity
+
+TN <- sum(prediction<=.5 & !test$violator)
+FP <- sum(prediction>.5 & !test$violator)
+specifity <- TN / (TN+FP)
+specifity
+
+accuracy <- (TP + TN) / nrow(test)
+accuracy
+
+# What is the accuracy of a simple model that predicts that every parolee is a non-violator?
+accuracy_baseline <- sum(!test$violator) / nrow(test)
+accuracy_baseline
+```
+
+The model is likely of value to the board, and using a different logistic regression cutoff is likely to improve the model's value. The model is likely of value to the board, and using a different logistic regression cutoff is likely to improve the model's value.  
+```{r cache=TRUE}
+# Better result, threshold of 0.3
+TP <- sum(prediction>.3 & test$violator)
+FN <- sum(prediction<=.3 & test$violator)
+sensitivity <- TP / (TP+FN)
+sensitivity
+
+TN <- sum(prediction<=.3 & !test$violator)
+FP <- sum(prediction>.3 & !test$violator)
+specifity <- TN / (TN+FP)
+specifity
+
+accuracy <- (TP + TN) / nrow(test)
+accuracy
+```
+
+```{r cache=TRUE}
+# Using the ROCR package, what is the AUC value for the model?
+library(ROCR)
+ROCRpred <- prediction(prediction, test$violator)
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+This is the probability the model can correctly differentiate between a randomly selected parole violator and a randomly selected parole non-violator
+

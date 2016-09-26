@@ -1,0 +1,446 @@
+head	1.9;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.9
+date	2015.09.30.07.14.33;	author o-cho;	state Exp;
+branches;
+next	1.8;
+
+1.8
+date	2015.09.30.07.05.01;	author o-cho;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2015.09.30.06.00.39;	author o-cho;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2015.09.29.05.00.28;	author o-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2015.09.28.11.26.41;	author o-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2015.09.27.23.29.41;	author o-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2015.09.25.05.10.55;	author o-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2015.09.23.21.52.17;	author o-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2015.09.23.21.46.31;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@pellet.c
+@
+
+
+1.9
+log
+@*** empty log message ***
+@
+text
+@#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <unistd.h>
+#include <time.h>
+#include "swim_mill.h"
+
+struct Data2 data2;
+
+void main() {
+	srand(time(0));
+	double delay = 0.0;
+	int j, pelletX, pelletY , i = 0x80;
+	int myIndex, fishORpellet = 0, wait = 0;
+	key_t ShmKEY= 5678, ShmKEY2 = 7890;
+	
+	// Get shared memory segment identifier
+    int ShmID = shmget(ShmKEY, sizeof(int[11][11]), 0666);
+	int ShmID2 = shmget(ShmKEY2, sizeof(struct Memory), 0666);
+	if (ShmID == -1 ||ShmID2 == -1) {
+		perror("Failed to create shared memory segment");
+		exit(3);
+	}
+	char (*ShmPTR)[23] = shmat(ShmID, NULL, 0);
+	struct Memory *ShmPTR2 = shmat(ShmID2, NULL, 0);
+	if ((int *)ShmPTR  ==  (int *)-1 || (int *)ShmPTR2 == (int *)-1) {
+		perror("Failed to attach shared memory segment");
+		shmctl(ShmID, IPC_RMID,  0);
+		shmctl(ShmID2, IPC_RMID,  0);
+		exit(3);
+	}
+	
+	// Initializing
+	delay = rand() % 1 + 2;
+	usleep(1000000*delay);
+	pelletX = rand() % 22;
+	pelletY = rand() % 21;
+	data2.pelletX = pelletX;
+	data2.pelletY = pelletY;
+	ShmPTR2->n++;
+	ShmPTR2->nTotal++;
+	data2.eatten = 0;
+	ShmPTR[pelletY][pelletX] = i;
+	ShmPTR2->status = 1;		// Notify fish that the new pellet is dropped
+	
+	int n = ShmPTR2->n;	
+	int k;
+	for (k=0; k<n; k++) {			// Initialize to idle state to all pellets
+		if (ShmPTR2->empty[k]) {		// if flag is empty 
+			ShmPTR2->flag[k] = 1;		// Set as idle
+			ShmPTR2->empty[k] = 0;		// Set the flag isn't empty
+			myIndex = k;		// extract the Index
+			break;	
+		}
+	}
+	int time = 0;
+	while ( data2.eatten != 1) { // If the pellet isn't eatten it doesn't die
+		usleep(1000000/(10 - rand()%8));		// Random pellet speed
+		process(ShmPTR, ShmPTR2, myIndex, fishORpellet);
+	}
+	ShmPTR2->nTotal--;
+	ShmPTR2->empty[i] = 1;
+	
+	shmdt((void *) ShmPTR);
+	shmdt((void *) ShmPTR2);
+	exit (3) ;
+}
+ 
+@
+
+
+1.8
+log
+@Enlarge the board
+@
+text
+@d8 1
+@
+
+
+1.7
+log
+@Solve the dead lock problem
+@
+text
+@a6 1
+#include <time.h>
+a12 3
+	// signal(SIGINT, sig_handler);
+	clock_t t,it,rt;
+	t = clock();
+d14 2
+a15 1
+	int j, delay, pelletX, pelletY , i = 0x80;
+d26 1
+a26 1
+	char (*ShmPTR)[11] = shmat(ShmID, NULL, 0);
+a34 2
+	delay = rand() % 2 + 1;
+	sleep(delay);
+d36 4
+a39 2
+	pelletX = rand() % 10;
+	pelletY = rand() % 9;
+a57 1
+	// ShmPTR2->nTotal > 1 || data2.eatten != 1  ||
+d60 1
+a60 1
+		usleep(1000000/3);
+a61 3
+		time++;
+		// if (data2.eatten==1)
+			// printf("pid(%d) index: %d, nTotal %d,  eatten %d, time %d\n",  getpid(), myIndex, ShmPTR2->nTotal, data2.eatten, time);
+a65 1
+	// printf("Status %d\n", ShmPTR2->status);
+@
+
+
+1.6
+log
+@final
+@
+text
+@a7 1
+#include <signal.h>
+a11 7
+int usr_interrupt;
+
+void sig_handler(int signo) {
+  if (signo == SIGINT)
+    fprintf(stderr,"Pellet: Dying because of the inturrupt\n");
+	usr_interrupt=1;
+}
+d14 1
+a14 1
+	signal(SIGINT, sig_handler);
+d18 1
+a18 1
+	int j, delay, pelletX = rand() % 10, pelletY = rand() % 9, i = 0x80;
+d38 2
+d41 7
+a49 2
+	data2.pelletX = pelletX;
+	data2.pelletY = pelletY;
+d51 1
+a52 1
+	int n = ShmPTR2->n;	
+d54 1
+a54 1
+		if (ShmPTR2->flag[k]==0) {		// if flag is empty 
+d56 1
+d61 1
+a61 3
+
+	delay = rand()%2 + 1;
+	sleep(delay);
+d63 6
+a68 9
+	while (time < 15 || data2.eatten == 0) { // If the pellet isn't eatten it doesn't die
+		if (wait == 0) {
+			wait = 1;
+			process(ShmPTR, ShmPTR2, myIndex, fishORpellet);
+		} else if (wait == 1) {
+			wait = 0;
+			sleep(2);
+			time = time + 2;			
+		}
+d70 3
+@
+
+
+1.5
+log
+@Added solution 4 cretical section
+@
+text
+@a7 1
+#include "swim_mill.h"
+d10 1
+d17 1
+a17 1
+    fprintf(stderr,"\nPellet Dying because of the inturrupt\n");
+d21 1
+a21 1
+void main () {
+d26 1
+a26 1
+	int j, pelletX = rand() % 11, pelletY = rand() % 10, i = 0x80;
+d51 1
+a51 1
+
+d53 1
+a53 1
+	int n = ShmPTR2->n;
+d61 13
+a73 9
+	
+	sleep(1);
+	int s = data2.pelletY;
+	while (data2.pelletY < 11) {
+			// process(ShmPTR, ShmPTR2, myIndex, fishORpellet);
+			critical_section_pellet (ShmPTR, ShmPTR2);
+			sleep(1);
+			if (data2.status == 4)
+				printf("pid(%d) is eatten", getpid());
+d75 1
+a75 1
+	
+a80 11
+ 
+  
+  	// ShmPTR2->status = 0;
+	// while (ShmPTR2->status != 3 || pelletY < 11) {
+		// if (ShmPTR2->status == 2) {
+			// ShmPTR[pelletY][pelletX] = '.';
+			// pelletY++;
+			// ShmPTR[pelletY][pelletX] = ShmPTR[pelletY][pelletX]^i;		
+			// ShmPTR2->status = 1;
+		// }
+	// }@
+
+
+1.4
+log
+@Added process funtion
+Big optimization for loop iteration
+@
+text
+@d7 1
+d9 11
+d22 3
+d26 2
+a27 1
+	int pelletX = rand() % 11, pelletY = rand() % 10, i = 0x80;
+a28 1
+	int myIndex;
+d45 2
+d48 5
+a52 3
+	// ShmPTR2->status = 0;
+	
+	// Initialize to idle state to all pellets
+d54 1
+a54 2
+	int k;
+	for (k=0; k<n; k++) {
+a60 9
+	k=0;
+	// printf("pid(%d) : My Index: %d\n", getpid(), myIndex);
+	// do {
+	process(ShmPTR2, myIndex);
+		
+	// } while (ShmPTR2->flag[myIndex] != 1);
+		// k++;
+	// } while (k < 4);
+	
+d62 9
+d72 8
+d87 1
+a87 11
+	// }
+			
+	// printf("Status %d\n", ShmPTR2->status);
+	shmdt((void *) ShmPTR);
+	shmdt((void *) ShmPTR2);
+	exit (3) ;
+}
+ 
+ 
+  
+  @
+
+
+1.3
+log
+@Added another shared memory to store the pellet's coordinate
+@
+text
+@d10 4
+a13 5
+	int rows = 11, cols = 11, x, y, k = 0;
+	int ShmID, ShmID2;
+	key_t ShmKEY, ShmKEY2;
+	ShmKEY = 5678;
+	ShmKEY2 = 6789;
+a14 1
+	// printf("pellet(%d): I am pellet\n", getpid());
+d16 3
+a18 2
+	ShmID = shmget (ShmKEY,  sizeof(int[rows][cols]), 0666);
+	if (ShmID == -1)  {
+d20 1
+a20 1
+		exit (3);
+d22 3
+a24 3
+
+	char (*ShmPTR)[11] =  shmat(ShmID, NULL, 0);
+	if ((int) ShmPTR  == -1) {
+d27 2
+a28 8
+		exit (3);
+	  }
+	  
+	// Get shared memory segment identifier
+    ShmID2 = shmget(ShmKEY2, 20*sizeof(int), 0666);
+	if (ShmID2 == -1) {
+		perror("Failed to create shared memory segment");
+		exit (2);
+d30 12
+a41 5
+	int *ShmPTR2 =  (int*)shmat(ShmID2, NULL, 0);
+	if ((int) ShmPTR2  == -1) {
+      perror("Failed to attach shared memory segment");
+	  shmctl(ShmID2, IPC_RMID,  0);
+		exit (3);
+d43 8
+a50 4
+	
+
+	printf("pellet(%d): Dopping\n", getpid());
+	drop(ShmPTR, ShmPTR2);
+a52 11
+	// printf("pellet(%d): Attached the shared memory\n", getpid());
+	// sleep (5);
+	// ShmPTR[0][5] = i;
+	// system("clear");
+	// display(ShmPTR);
+
+	// ShmPTR[0][5] = '.';
+	// sleep (1);
+	// ShmPTR[1][5] = ShmPTR[1][5]^i;
+	// system("clear");
+	// display(ShmPTR);
+d54 10
+a65 1
+	// printf("pellet(%d): Detached the shared memory\n", getpid());
+d67 5
+a71 1
+}@
+
+
+1.2
+log
+@added shared memory management
+tested displaying random pellet position
+@
+text
+@d11 2
+a12 2
+	int ShmID;
+	key_t ShmKEY;
+d14 1
+a14 1
+	char i = 0x80;
+d30 19
+d50 4
+a53 4
+	sleep (5);
+	ShmPTR[0][5] = i;
+	system("clear");
+	display(ShmPTR);
+d55 5
+a59 5
+	ShmPTR[0][5] = '.';
+	sleep (1);
+	ShmPTR[1][5] = ShmPTR[1][5]^i;
+	system("clear");
+	display(ShmPTR);
+d62 1
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 45
+@

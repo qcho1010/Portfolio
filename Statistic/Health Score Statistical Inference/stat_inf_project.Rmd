@@ -1,0 +1,519 @@
+---
+title: "Statistical inference with the GSS data"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `gss`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+setwd("F:/specialization/22-Master Statistics with R (Duke University)/data")
+load("brfss2013.Rdata")
+healthScore <- read.csv("score.csv")
+```
+
+# Introduction
+The Behavioral Risk Factor Surveillance System (BRFSS) is a collaborative project between all of the states in the United States (US) and participating US territories and the Centers for Disease Control and Prevention (CDC). The BRFSS is administered and supported by CDC's Population Health Surveillance Branch, under the Division of Population Health at the National Center for Chronic Disease Prevention and Health Promotion. BRFSS is an ongoing surveillance system designed to measure behavioral risk factors for the non-institutionalized adult population (18 years of age and older) residing in the US. The BRFSS was initiated in 1984, with 15 states collecting surveillance data on risk behaviors through monthly telephone interviews. Over time, the number of states participating in the survey increased; by 2001, 50 states, the District of Columbia, Puerto Rico, Guam, and the US Virgin Islands were participating in the BRFSS. Today, all 50 states, the District of Columbia, Puerto Rico, and Guam collect data annually and American Samoa, Federated States of Micronesia, and Palau collect survey data over a limited point- in-time (usually one to three months). In this document, the term "state" is used to refer to all areas participating in BRFSS, including the District of Columbia, Guam, and the Commonwealth of Puerto Rico.
+
+The BRFSS objective is to collect uniform, state-specific data on preventive health practices and risk behaviors that are linked to chronic diseases, injuries, and preventable infectious diseases that affect the adult population. Factors assessed by the BRFSS in 2013 include tobacco use, HIV/AIDS knowledge and prevention, exercise, immunization, health status, healthy days - health-related quality of life, health care access, inadequate sleep, hypertension awareness, cholesterol awareness, chronic health conditions, alcohol consumption, fruits and vegetables consumption, arthritis burden, and seatbelt use. Since 2011, BRFSS conducts both landline telephone- and cellular telephone-based surveys. In conducting the BRFSS landline telephone survey, interviewers collect data from a randomly selected adult in a household. In conducting the cellular telephone version of the BRFSS questionnaire, interviewers collect data from an adult who participates by using a cellular telephone and resides in a private residence or college housing.
+
+Health characteristics estimated from the BRFSS pertain to the non-institutionalized adult population, aged 18 years or older, who reside in the US. In 2013, additional question sets were included as optional modules to provide a measure for several childhood health and wellness indicators, including asthma prevalence for people aged 17 years or younger.
+
+* * *
+
+## Part 1: Data
+
+In conducting the BRFSS landline telephone survey, interviewers collect data from a randomly selected adult in a household.  
+In conducting the cellular telephone version of the BRFSS questionnaire, interviewers collect data from an adult who participates by using a cellular telephone and resides in a private residence or college housing.  
+Health characteristics estimated from the BRFSS pertain to the non-institutionalized adult population, aged 18 years or older, who reside in the US.
+The data implicitly  contain convenience sample bais, since the data was collected by highly volunteered participants. However, since the data is collected by randomly selected adult from the population within the specific area throughout USA, the property of random selection is met. Also, since,the data are well documented and collected from different types of groups based on State, physical, mental health condition, daily life style, and medical history etc, the data is also met the property of random assignment. 
+
+* * *
+
+## Part 2: Research questions
+
+Before working on the health condition variables, I'm going to create new variables call 'healthScore' which is health condition score, higher the healthier.  
+The new variables is based on the main survey section 7 - chronic health conditions.
+
+We have observations on 6 different variables, some categorical and some 
+numerical. The meaning of each variable is as follows.
+
+variable         | description
+---------------- | ---------------------------------------------
+`income`         | person's income group.
+`healthCare`     | where the person has access to healthCare or not.
+`smoking`        | where the person is smocking or not.
+`exercise`       | where the person does exercise occasionally or not
+`sleepingHour`   | person's average sleeping hours.
+`healthScore`    | persons's health score.
+
+
+**Research quesion 1:**  
+Does the data suggest that, people with higher income have better health conditon than people with lower income and does the health care accessibility correlated with both the explantory and response variables?  
+
+Exploratory variable : Income status  
+-- 'income2'  
+Comfonding variable : Health care access  
+-- 'hlthpln1'  
+Response variable : Health condition  
+-- 'cvdinfr4', 'cvdcrhd4', 'cvdstrk3', 'asthma3', 'asthnow', 'chcscncr', 'chcocncr', 'chccopd1', 'havarth3', 'addepev2', 'chckidny', 'diabete3'  
+
+**Research quesion 2:**  
+Does the data suggest that, people with smoking activity have better health condition than people without smoking activity and does the exercise activity is also correlated with the explantory and response variables?  
+
+Exploratory variable : Smoking activity  
+-- 'smoke100'  
+Comfonding variable : Exercise activity  
+-- 'exerany2'  
+Response variable : Health condition  
+-- 'cvdinfr4', 'cvdcrhd4', 'cvdstrk3', 'asthma3', 'asthnow', 'chcscncr', 'chcocncr', 'chccopd1', 'havarth3', 'addepev2', 'chckidny', 'diabete3'  
+
+**Research quesion 3:**  
+Does the data suggest that, people with higher sleeping hours have better health condition than people with fewer sleeping hours?  
+
+Exploratory variable : Sleeping hour  
+-- 'sleptim1'  
+Response variable : Health condition  
+-- 'cvdinfr4', 'cvdcrhd4', 'cvdstrk3', 'asthma3', 'asthnow', 'chcscncr', 'chcocncr', 'chccopd1', 'havarth3', 'addepev2', 'chckidny', 'diabete3'  
+
+
+* * *
+## Part 3: Exploratory data analysis
+
+```{r cache=T, warning=F}
+data <- brfss2013[,c('income2', 'hlthpln1', 'smoke100', 'exerany2', 'sleptim1')]
+data <- cbind(data, log(healthScore))
+colnames(data) <- c("income", "healthCare", "smoking", "exercise", "sleepingHour", "healthScore")
+
+head(data)
+
+library(corrplot)
+```
+
+
+**Research quesion 1:**
+
+```{r cache=T, warning=F}
+# Frequency table based on income group
+table(data$income, useNA = "always")/nrow(data)
+
+ggplot(data[!is.na(data$income), ], aes(income)) + 
+     geom_bar(aes(fill = healthCare)) + 
+     labs(title = "Count vs. Income Group") +
+     xlab("Income Group") +
+     ylab("Count")
+```
+
+Graph Interpretation :  
+More than 50% of people are fall under income group of 70000 or higher.  
+The relationship between health care accessibility and income is negatively associated each other as you see in the graph.  
+
+```{r cache=T, warning=F}
+ggplot(data[!is.na(data$income) & !is.na(data$healthCare), ], aes(income, healthScore)) + 
+     geom_boxplot(aes(colour = healthCare)) + 
+     ylim(1.6, 2.4) +
+     labs(title = "Health Score vs. Income Group") +
+     xlab("Income Group") +
+     ylab("Health Score")
+```
+ 
+Graph Interpretation :  
+Lower the income group have more variance in health score and higher the income group has more steady higher health score; therefore, the income group is positively associated with health score.  
+
+```{r cache=T, warning=F}
+# Frequency table based on Health care access
+table(data$healthCare, useNA = "always")/nrow(data)
+
+ggplot(data[!is.na(data$healthCare), ], aes(healthCare, healthScore)) + 
+     geom_boxplot() + 
+     ylim(1.8, 2.4) +
+     labs(title = "Health Score vs. Health Care") +
+     xlab("Health Care") +
+     ylab("Health Score")
+```
+
+Graph Interpretation :  
+People with health care have more variance in health score.  
+In this case, we can assume that sick group tend to have health care program wheres healthier group does not needed health care program.  
+
+
+### Conclusion :  
+Higher income group tend to have higher health score.  
+Sicker group tend to have health care program.  
+Lower income group -> Unhealthy -> enroll health care program  
+
+**Research quesion 2:**
+
+```{r cache=T, warning=F}
+# Frequency table based on smoking behavior
+table(data$smoking, useNA = "always")/nrow(data)
+
+# Frequency table based on exercise activity
+table(data$exercise, useNA = "always")/nrow(data)
+
+ggplot(data[!is.na(data$smoking), ], aes(smoking)) + 
+     geom_bar(aes(fill = exercise)) + 
+     labs(title = "Count vs. Smoking") +
+     xlab("Smoking") +
+     ylab("Count")
+
+```
+
+Graph Interpretation :  
+About 44 percent of people are smoking.  
+About 67 percent of people are doing exercise activity.    
+Non-smoker tends to exercise more than smoker.  
+
+```{r cache=T, warning=F}
+ggplot(data[!is.na(data$smoking) & !is.na(data$exercise), ], aes(smoking, healthScore)) + 
+     geom_boxplot(aes(colour = exercise)) + 
+     ylim(1.8, 2.4) +
+     labs(title = "Health Score vs. Smoking") +
+     xlab("smoking") +
+     ylab("Health Score")
+
+```
+
+Graph Interpretation :  
+Non-smoker and exercising group tends to have very steady high health score; wheres smoker and non-exercising have very high variance in health score.  
+Based on the boxplot, smoking and health score are linearly dependent and exercising and health score are linearly dependent.  
+
+
+### Conclusion :  
+Non-smoker and exercising group variable both positively impacting on health score.  
+
+**Research quesion 3:**
+
+```{r cache=T, warning=F}
+# Frequency table based on sleeping hours
+summary(as.numeric(data[!is.na(data$sleepingHour),]$sleepingHour))
+ggplot(data[!is.na(data$sleepingHour), ], aes(sleepingHour)) + 
+     geom_bar() + 
+     xlim(1, 14) +
+     labs(title = "Count vs. Sleeping Hour") +
+     xlab("Sleeping Hour") +
+     ylab("Count")
+```
+
+Graph Interpretation :  
+There are some extreme variables; therefore, I am excluding those extreme variables for further analysis.
+Mean, and median are both about 8 which implies that 'sleepingHour' variables is most likely forming normal distribution and we can confirm that by looking at the bar chart.
+
+```{r cache=T, warning=F}
+data$sleepingHour <- as.factor(data$sleepingHour)
+ggplot(data[!is.na(data$sleepingHour) & as.numeric(data$sleepingHour) >= 1 & as.numeric(data$sleepingHour) <= 14, ], aes(sleepingHour, healthScore)) + 
+     geom_boxplot() + 
+     ylim(1.8, 2.4) +
+     labs(title = "Health Score vs. Sleeping Hours") +
+     xlab("Sleeping Hours") +
+     ylab("Health Score")
+```
+
+Graph Interpretation :  
+Box chart implies that there is no dependent association between 'sleeping hours' and 'health score'.  
+
+### Conclusion :  
+'sleeping hours' and 'health score' are independent to each other.  
+
+
+* * *
+
+## Part 4: Inference
+
+```{r cache=T}
+# Remove dirty values
+data <- data[!is.infinite(data$healthScore), ]
+data <- data[!is.na(data$healthCare), ]
+data <- data[!is.na(data$smoking), ]
+data <- data[!is.na(data$exercise), ]
+data <- data[!is.na(data$sleepingHour), ]
+data <- data[!is.na(data$income), ]
+
+data %>%
+  summarise(mu = mean(healthScore), pop_med = median(healthScore), 
+            sigma = sd(healthScore), pop_iqr = IQR(healthScore),
+            pop_min = min(healthScore), pop_max = max(healthScore),
+            pop_q1 = quantile(healthScore, 0.25),  # first quartile, 25th percentile
+            pop_q3 = quantile(healthScore, 0.75))  # third quartile, 75th percentile
+```
+
+### True Population Mean and Confidence Interval
+```{r cache=T}
+# true population mean
+params <- data %>%
+     summarise(mu = mean(healthScore))
+
+z_star_95 <- qnorm(0.975)
+n <- nrow(data)
+data %>%
+  summarise(lower = mean(healthScore) - z_star_95 * (sd(healthScore) / sqrt(n)),
+            upper = mean(healthScore) + z_star_95 * (sd(healthScore) / sqrt(n)))
+```
+Interpretation :
+  The population mean lies between these two bounds of 2.258578 and 2.25959, since 95% of the time confidence intervals contain the true mean.
+  
+
+
+### Checking the skewness of the health score distribution
+```{r cache=T}
+# Checking the skewness
+ggplot(data = data, aes(x = healthScore)) +
+  geom_histogram()
+```
+
+### Apply Sampling Distribution  
+     We have to remove the skewness in order to make CLT to kick in.  
+     We will use sample size of 50 and 15000 samples with replacement.  
+```{r cache=T}
+sample_means50 <- data %>%
+                    rep_sample_n(size = 50, reps = 15000, replace = TRUE) %>%
+                    summarise(x_bar = mean(healthScore))
+
+ggplot(data = sample_means50, aes(x = x_bar)) +
+  geom_histogram()
+```
+
+
+### Building 95% Confidence Interval with Sampling Distribution
+```{r cache=T}
+z_star_95 <- qnorm(0.975)
+z_star_95
+
+n <- 60
+ci <- data %>%
+     rep_sample_n(size = 60, reps = 50, replace = TRUE) %>%
+     summarise(lower = mean(healthScore) - z_star_95 * (sd(healthScore) / sqrt(n)),
+               upper = mean(healthScore) + z_star_95 * (sd(healthScore) / sqrt(n)))
+ci %>%
+  slice(1:5)
+```
+
+### Plotting Confidence Interval
+```{r cache=T}
+inference(y = healthScore, data = data, statistic = "mean", type = "ci", 
+          conf_level = 0.95, method = "theoretical", order = c("Yes","No"))
+
+ci <- ci %>%
+     mutate(capture_mu = ifelse(lower < params$mu & upper > params$mu, "yes", "no"))
+
+ci_data <- data.frame(ci_id = c(1:50, 1:50),
+                      ci_bounds = c(ci$lower, ci$upper),
+                      capture_mu = c(ci$capture, ci$capture))
+
+ggplot(data = ci_data, aes(x = ci_bounds, y = ci_id, group = ci_id, color = capture_mu)) +
+     geom_point(size = 2) +  # add points at the ends, size = 2
+     geom_line() +           # connect with lines
+     geom_vline(xintercept = params$mu, color = "darkgray") # draw vertical line
+```
+
+
+### Health Score vs Health Care.  
+  $H_0: \mu_{health care} = \mu_{no health care}$; $H_A: \mu_{health care} \ne \mu_{no health care}$
+
+```{r cache=T}
+# Confidence Interval with function (Mean : Catagorical vs Quantative)
+inference(y = healthScore, x = healthCare, data = data, statistic = "mean", type = "ci", 
+          method = "theoretical", order = c("Yes","No"))
+
+# Hypothesis Test with functions (Mean : Catagorical vs Quantative)
+inference(y = healthScore, x = healthCare, data = data, statistic = "mean", type = "ht", null = 0, 
+          alternative = "twosided", method = "theoretical")
+
+
+s1 <- sd(data[data$healthCare == "Yes", ]$healthScore)
+s2 <- sd(data[data$healthCare == "No", ]$healthScore)
+n1 <- nrow(data[data$healthCare == "Yes", ])
+n2 <- nrow(data[data$healthCare == "No", ])
+x1 <- mean(data[data$healthCare == "Yes", ]$healthScore)
+x2 <- mean(data[data$healthCare == "No", ]$healthScore)
+
+# Confidence Interval with hand
+x_diff <- x1 - x2
+se <- sqrt((s1^2/n1) + (s2^2/n2))
+
+z <- abs(qnorm(.025))  # 95%
+ci <- round(c(x_diff - z*se, x_diff + z*se), 4)
+ci
+
+# Hypothesis Test with hand
+se <- sqrt((s1^2/n1) + (s2^2/n2))
+t <- (x1 - x2) / se
+df <- min(n1, n2) - 1
+pt(t, df)
+```
+**Interpretation**  
+  The population mean lies between these two bounds of -0.0399 -0.0367, since 95% of the time confidence intervals contain the true mean.  
+  Since the p-value is less than .05 we will reject the null hypothesis and accept the alternative hypothesis that Health care accessibility is effecting on Health Score.  
+
+
+### Health Score vs Smoking.  
+  $H_0: \mu_{smoking} = \mu_{notSmoking}$; $H_A: \mu_{smoking} \ne \mu_{notSmoking}$
+
+```{r cache=T}
+# Confidence Interval with function (Mean : Catagorical vs Quantative)
+inference(y = healthScore, x = smoking, data = data, statistic = "mean", type = "ci", 
+          method = "theoretical", order = c("Yes","No"))
+
+# Hypothesis Test with functions (Mean : Catagorical vs Quantative)
+inference(y = healthScore, x = smoking, data = data, statistic = "mean", type = "ht", null = 0, 
+          alternative = "twosided", method = "theoretical")
+
+
+s1 <- sd(data[data$smoking == "Yes", ]$healthScore)
+s2 <- sd(data[data$smoking == "No", ]$healthScore)
+n1 <- nrow(data[data$smoking == "Yes", ])
+n2 <- nrow(data[data$smoking == "No", ])
+x1 <- mean(data[data$smoking == "Yes", ]$healthScore)
+x2 <- mean(data[data$smoking == "No", ]$healthScore)
+
+# Confidence Interval with hand
+x_diff <- x1 - x2
+se <- sqrt((s1^2/n1) + (s2^2/n2))
+
+z <- abs(qnorm(.025))  # 95%
+ci <- round(c(x_diff - z*se, x_diff + z*se), 4)
+ci
+
+# Hypothesis Test with hand
+se <- sqrt((s1^2/n1) + (s2^2/n2))
+t <- (x1 - x2) / se
+df <- min(n1, n2) - 1
+pt(t, df)
+```
+**Interpretation**   
+  The population mean lies between these two bounds of -0.0632 -0.0610, since 95% of the time confidence intervals contain the true mean.  
+  Since the p-value is less than .05 we will reject the null hypothesis and accept the alternative hypothesis that smoking behavior is effecting on Health Score.  
+
+
+### Health Score vs Exercise.  
+  $H_0: \mu_{smoking} = \mu_{notSmoking}$; $H_A: \mu_{smoking} \ne \mu_{notSmoking}$
+
+```{r cache=T}
+# Confidence Interval with function (Mean : Catagorical vs Quantative)
+inference(y = healthScore, x = exercise, data = data, statistic = "mean", type = "ci", 
+          method = "theoretical", order = c("Yes","No"))
+
+# Hypothesis Test with functions (Mean : Catagorical vs Quantative)
+inference(y = healthScore, x = exercise, data = data, statistic = "mean", type = "ht", null = 0, 
+          alternative = "twosided", method = "theoretical")
+
+
+s1 <- sd(data[data$exercise == "Yes", ]$healthScore)
+s2 <- sd(data[data$exercise == "No", ]$healthScore)
+n1 <- nrow(data[data$exercise == "Yes", ])
+n2 <- nrow(data[data$exercise == "No", ])
+x1 <- mean(data[data$exercise == "Yes", ]$healthScore)
+x2 <- mean(data[data$exercise == "No", ]$healthScore)
+
+# Confidence Interval with hand
+x_diff <- x1 - x2
+se <- sqrt((s1^2/n1) + (s2^2/n2))
+
+z <- abs(qnorm(.025))  # 95%
+ci <- round(c(x_diff - z*se, x_diff + z*se), 4)
+ci
+
+# Hypothesis Test with hand
+se <- sqrt((s1^2/n1) + (s2^2/n2))
+t <- (x1 - x2) / se
+df <- min(n1, n2) - 1
+1 - pt(t, df)
+```
+**Interpretation**  
+  The population mean lies between these two bounds of 0.0664 0.0693, since 95% of the time confidence intervals contain the true mean.  
+  Since the p-value is less than .05 we will reject the null hypothesis and accept the alternative hypothesis that excersie hobit is effecting on Health Score.  
+
+
+### Smoking vs Exercise.  
+  $H_0: \mu_{smoking} = \mu_{notSmoking}$; $H_A: \mu_{smoking} \ne \mu_{notSmoking}$
+
+```{r cache=T}
+# Confidence Interval with function (Proportion : Catagorical vs Catagorical)
+inference(y = smoking, x = exercise, data = data, statistic = "proportion", type = "ci", 
+          method = "theoretical", success = "Yes")
+
+# Hypothesis Test with functions (Proportion : Catagorical vs Catagorical)
+inference(y = smoking, x = exercise, data = data, statistic = "proportion", type = "ht", null = 0, 
+          alternative = "twosided", method = "theoretical", success = "Yes")
+
+n1 <- nrow(data[data$exercise == "Yes", ])
+n2 <- nrow(data[data$exercise == "No", ])
+p1 <- nrow(data[data$smoking == "Yes" & data$exercise == "Yes", ])/ n1
+p2 <- nrow(data[data$smoking == "Yes" & data$exercise == "No", ])/ n2
+se <- sqrt((p1*(1-p1)/n1) + (p2*(1-p2)/n2))
+
+# Confidence Interval with hand
+z <- abs(qnorm(.025))
+p_dff <- abs(p1 - p2)
+result <- round(c(p_dff - z*se, p_dff + z*se), 4)
+result
+
+# Hypothesis Test with hand
+t <- (p1 - p2) / se
+df <- min(n1, n2) - 1
+(1 - pt(t, df))*2
+```
+**Interpretation**  
+  The population mean lies between these two bounds of 0.0861 0.0932, since 95% of the time confidence intervals contain the true proportion.  
+  Since the p-value is less than .05 we will reject the null hypothesis and accept the alternative hypothesis that excersie hobit is effecting on Health Score.  
+
+
+### Health Score vs Income Group.  
+  $H_0: \mu_{1} = \mu_{2} = \mu_{3} ... = \mu_{k}$; $H_A:$ At least one mean is different  
+
+```{r cache=T}
+# ANOVA with function (Proportion : Catagorical vs Multiple Catagorical)
+model <- aov(healthScore ~ income, data = data)
+ggplot(data, aes(income, healthScore)) + 
+     geom_boxplot() + 
+     ylim(1.6, 2.4) +
+     labs(title = "Health Score vs. Income Group") +
+     xlab("Income Group") +
+     ylab("Health Score")
+anova(model)
+
+result <- 824/(824+11560)
+result
+
+# We need to caluclate new p-value for ANOVA
+k <- length(unique(data$income))
+k <- k*(k-1)/2 
+alpha <- .05
+alpha_adj <- alpha/k
+alpha_adj
+
+```
+**Interpretation**  
+7% percent of data is explained by this anlysis else are not explained by this variables. May be other confound veriables analysis is needed.  
+Even though adjust p-value is 0.00179, we still reject the null hypothesis because F value is 2e-16.  
+Therefore we can conclude that there are at least two group means are significantly different from each other.  
+
+     
+### Health Score vs Sleeping Hours .  
+
+```{r cache=T}
+data$sleepingHour <- as.numeric(data$sleepingHour)
+p <- ggplot(data, aes(sleepingHour, healthScore)) + 
+     geom_point() + 
+     geom_smooth(method = "lm", se = FALSE)
+p
+```
+**Interpretation**    
+     Although we do not see the strong relationship between sleeping hour and Health score, the liear regression line shows that there are slight effect going on.   More sleeping hour refers better health condition in general.  
+

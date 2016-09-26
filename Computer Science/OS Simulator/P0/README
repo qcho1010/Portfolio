@@ -1,0 +1,45 @@
+Program Name: doenv
+Developer: Kyu Cho
+Class: CS 4760 - Operating System.
+Version 1.12
+09/09/15
+
+
+[File lists]
+doenv.c,v
+doenv.c
+Makefile
+README
+
+
+[Objective]
+This program does have the same functionality as "env" command with the limited arguments.
+    command [-i] [name=value ...] [utility [argument ...]] 
+
+    
+[Arguments]
+The working arguments are following.
+    -i
+    name=value
+    utility
+    
+no argument -> By using getenv(3C) outputs current environment variables to stdout
+-i argument -> Entire environment variables will be replced to "name=value"
+name=value argument -> Replace old variable if it is already exist, Add if it is a new variable
+utility -> Perform appropriate command (ex. cat, ls, vim, etc...)
+
+
+[Functions]
+int main(int argc, char **argv)
+    - Check if the argument contains "-i"
+    - Check if the argument contains "name=value"
+    - Check if the argument contains "utility" commands
+    - After the argument validation, call appropriate function
+    
+void update_env(char ** new_environ, int i_flag)
+    - Replace new value, if the name is already exist
+    - Add new value, if the name is new
+    - Clean all environment values if argument "-i" is included and add new value
+
+void get_env() 
+    - Print the most recent environment values in the list

@@ -1,0 +1,94 @@
+---
+title: "Week3-2"
+author: "Kyu Cho"
+date: "Saturday, June 20, 2015"
+output: html_document
+---
+# Objective
+We'll be using analytical models to prevent heart disease.
+The first step is to identify risk factors, or the independent variables, that we will use in our model. Then, using data, we'll create a logistic regression model to predict heart disease.
+Using more data, we'll validate our model to make sure it performs well out of sample and on different populations than the training set population.
+Lastly, we'll discuss how medical interventions can be defined using the model.
+We'll be predicting the 10-year risk of coronary heart disease or CHD.
+This was the subject of an important 1998 paper introducing what is known as the Framingham Risk Score.  This is one of the most influential applications of the Framingham Heart Study data.
+We'll use logistic regression to create a similar model.
+CHD is a disease of the blood vessels supplying the heart. This is one type of heart disease, which has been the leading cause of death worldwide since 1921. In 2008, 7.3 million people died from CHD. Even though the number of deaths due to CHD is still very high, age-adjusted death rates have actually declined 60% since 1950.
+This is in part due to earlier detection and monitoring partly because of the Framingham Heart Study.  
+
+Before building a logistic regression model, we need to identify the independent variables  we want to use. When predicting the risk of a disease, we want to identify what are known as risk factors.  These are the variables that increase  the chances of developing a disease.  The term risk factors was actually  coined by William Kannell and Roy Dawber  from the Framingham Heart Study.  Identifying these risk factors is  the key to successful prediction of CHD.  
+
+# Variables
+ - male : sex  
+ - age : age  
+ - education : Some high schoo (1), high school/GED (2), some college(3), college(4)  
+  
+Behaviro risk factors  
+ - currentSmoker, sigsPerDay : smoking behavior  
+  
+Medical history risk factors  
+ - BPmeds : On blood pressure medication at time of firs examination  
+ - prevalentStroke : Previously had a stoke  
+ - prevalentHyp : Currently hypertensive  
+ - diabetes : currenly has diabetes  
+Risk factros from first examination  
+ - tolChol : total cholesterol (mg/dL)  
+ - sysBP : Sytolic blood pressure  
+ - diaBP : Diastolic blood pressure  
+ - BMI : Body Mass Index, weight(kg)/height(m)^2  
+ - hearRate : Heart Rate (beats/minute)  
+ - glucose : Blood glucose level (mg/dL)  
+ 
+Use these variables to predict the 10 years of CHD  
+
+```{r cache=TRUE}
+setwd("D:/Google Drive/College/4-The Analytics Edge/data3")
+framingham = read.csv("framingham.csv")
+summary(framingham)
+str(framingham)
+head(framingham)
+```
+
+```{r cache=TRUE}
+# library to split the data
+library(caTools)
+set.seed(1000)
+
+# First argument : outcome variable
+# Second argument : The percentage of data that we want in the training set
+# For larger data set, we can afford to put less data in the training set and more in the testing set. This will increase the confidence in the ability of the model to extend to new data.  Larger test set will still give us enough data in the training set to create our model. Usually put 50% to 80% in the training set.
+split = sample.split(framingham$TenYearCHD, SplitRatio = 0.65)
+train = subset(framingham, split == TRUE)
+test = subset(framingham, split == FALSE)
+
+# Create logistic model
+framinghamLog = glm(TenYearCHD ~ ., data = train, family = binomial)
+summary(framinghamLog)
+
+#hint : The number of cigarettes smoked per day would be the most dramatically affected by a behavioral intervention. This is a variable that the patient has the ability to control the most.
+
+# Build model to predict on test set ("response" gives us the probability)
+predictTest = predict(framinghamLog, type = "response", newdata = test)
+table(test$TenYearCHD, predictTest > 0.5)
+```
+With a threshold of 0.5, we predict an outcome of 1, the true column, very rarely.  This meaans that our model rarely predicts a 10-year CHD risk above 50%.  
+```{r cache=TRUE}
+# Accuracy of the model
+(1069+11)/(1069+6+189+11)
+
+# Accuracy of a simple baseline method.
+(1069+6)/(1069+6+187+11)
+```
+So, model barely beats the baseline in terms of accuracy.  
+  
+Let's compute the out-of-sample AUC.  
+```{r cache=TRUE, hide=TRUE}
+library(ROCR)
+```
+
+```{r cache=TRUE}
+ROCRpred = prediction(predictTest, test$TenYearCHD)
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+We have 74%.  Meaning, the model can differentiate between low risk patients and high risk patients pretty well.  
+
+Doing external validation with recalibrated model is very critical.

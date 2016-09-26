@@ -1,0 +1,121 @@
+---
+title: "Week7-3 MIT"
+author: "Kyu Cho"
+date: "July 15, 2015"
+output: html_document
+---
+
+```{r cache=TRUE}
+library(ggplot2)
+library(ggmap)
+library(reshape2)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data7")
+intl = read.csv("intl.csv")
+households = read.csv("households.csv")
+intlall = read.csv("intlall.csv", stringsAsFactors=FALSE)
+str(intl)
+```
+
+## Cleaning data
+```{r cache=TRUE}
+# stat = "identity" use the value of the y variable as is. 
+# The height of the bar is the value of the y variable.
+ggplot(intl, aes(x=Region, y=PercentOfIntl)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=PercentOfIntl))
+
+# Make Region an ordered factor
+r = reorder(intl$Region, -intl$PercentOfIntl)
+intl = transform(intl, r)
+
+# Make the percentages out of 100 instead of fractions
+intl$PercentOfIntl = intl$PercentOfIntl * 100
+str(intl)
+```
+
+## Building plot
+```{r cache=TRUE}
+ggplot(intl, aes(x=Region, y=PercentOfIntl)) +
+    geom_bar(stat="identity", fill="dark blue") +
+    geom_text(aes(label=PercentOfIntl), vjust=-.5) +
+    ylab("Percent of International Students") +
+    theme(axis.title.x=element_blank(), axis.text.x=element_text(angle=45, hjust=1))
+```
+
+## Fixing variables for Map builing
+```{r cache=TRUE}
+head(intlall)
+
+# Those NAs are really 0s, and we can replace them easily
+intlall[is.na(intlall)] = 0
+
+# Now lets look again
+head(intlall)
+
+# Load the world map
+world_map = map_data("world")
+str(world_map)
+
+# Lets merge intlall into world_map using the merge command
+world_map = merge(world_map, intlall, by.x="region", by.y="Citizenship")
+str(world_map)
+
+# Plot the map
+ggplot(world_map, aes(x=long, y=lat, group=group)) +
+    geom_polygon(fill="white", color="black") +
+    coord_map("mercator")
+
+# Reorder the data
+world_map = world_map[order(world_map$group, world_map$order),]
+
+# Redo the plot
+ggplot(world_map, aes(x=long, y=lat, group=group)) +
+    geom_polygon(fill="white", color="black") +
+    coord_map("mercator")
+
+# Lets "fix" that in the intlall dataset
+intlall$Citizenship[intlall$Citizenship=="China (People's Republic Of)"] = "China"
+
+# We'll repeat our merge and order from before
+world_map = merge(map_data("world"), intlall, by.x="region", by.y="Citizenship")
+world_map = world_map[order(world_map$group, world_map$order),]
+
+ggplot(world_map, aes(x=long, y=lat, group=group)) +
+    geom_polygon(aes(fill=Total), color="black") +
+    coord_map("mercator")
+```
+ 
+## Build as globe
+```{r cache=TRUE}
+# We can try other projections - this one is visually interesting
+ggplot(world_map, aes(x=long, y=lat, group=group)) +
+    geom_polygon(aes(fill=Total), color="black") +
+    coord_map("ortho", orientation=c(20, 30, 0))
+
+
+ggplot(world_map, aes(x=long, y=lat, group=group)) +
+    geom_polygon(aes(fill=Total), color="black") +
+    coord_map("ortho", orientation=c(-37, 175, 0))
+```
+
+## Build line graph
+```{r cache=TRUE}
+# Now lets load our dataframe
+str(households)
+
+# Lets look at the first two columns of our households dataframe
+head(households)
+
+# Group by household and year will be in order.
+melt(households, id="Year")[1:20,]
+
+# Plot it
+ggplot(melt(households, id="Year"), aes(x=Year, y=value, color=variable)) +
+    geom_line(size=2) + 
+    geom_point(size=5) +  
+    ylab("Percentage of Households")
+
+```
+
+

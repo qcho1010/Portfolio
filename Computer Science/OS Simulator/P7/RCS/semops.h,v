@@ -1,0 +1,65 @@
+head	1.2;
+access;
+symbols;
+locks
+	o2-cho:1.2; strict;
+comment	@ * @;
+
+
+1.2
+date	2016.04.29.17.46.18;	author o2-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2016.04.19.17.52.39;	author o2-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@Initial skeleton program
+@
+
+
+1.2
+log
+@All working without 2nd chance algorithm
+@
+text
+@// RCS DATA AT BOTTOM OF FILE
+
+#define SEMWAIT -1                              // Argument for sem_op
+#define SEMSIG 1                                // Argument for sem_op
+
+// Semaphore operation function
+void sem_op(int op, int semid, char *procname);
+
+
+// RCS information:
+// $Author: o2-cho $
+// $Date: 2016/04/19 17:52:39 $
+// $RCSfile: semops.h,v $
+// $Log: semops.h,v $
+// Revision 1.1  2016/04/19 17:52:39  o2-cho
+// Initial revision
+//
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d3 2
+a4 2
+#define SEMWAIT -1								// Argument for sem_op
+#define SEMSIG 1								// Argument for sem_op
+d11 7
+a17 4
+// $Author:  $
+// $Date:  $
+// $RCSfile:  $
+// $Log:  $
+@

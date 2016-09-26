@@ -1,0 +1,95 @@
+---
+title: "Week2-3"
+author: "Kyu Cho"
+date: "Wednesday, June 17, 2015"
+output: html_document
+---
+
+```{r cache=TRUE}
+setwd("D:/Google Drive/College/4-The Analytics Edge/data2")
+NBA = read.csv("NBA_train.csv")
+NBA_test = read.csv("NBA_test.csv")
+str(NBA)
+```
+
+```{r cache=TRUE}
+tail(table(NBA$W, NBA$Playoffs),40)
+```
+Looks like wining 42 games would make it the playoff.  
+
+Let's find out the variable that has strong linear relationship, start with point difference.  
+```{r cache=TRUE}
+NBA$PTSdiff = NBA$PTS - NBA$oppPTS
+plot(NBA$PTSdiff, NBA$W)
+```
+
+Since, it looks they have strong linear relationship, linear regression is the good way to start.  
+
+```{r cache=TRUE}
+WinsReg = lm(W ~ PTSdiff, data = NBA)
+summary(WinsReg)
+```
+As we assumed, it has R-squared of .9423 so it's very strong relationship.  
+
+Let's make linear equation out of it.  
+W = 41 + 0.0326 * PTSdiff  
+We need at least 42 wins in order to make it to the playoff safely.
+W >= 42
+PTSdiff >= (42-41)/0.0326 = 30.63
+We need to score at least 31 more in order to make to the playoff.
+
+```{r cache=TRUE}
+PointsReg = lm(PTS ~ X2PA + X3PA + FTA + AST + ORB + DRB + TOV + STL + BLK, data = NBA)
+summary(PointsReg)
+
+head(PointsReg$residuals)
+SSE = sum(PointsReg$residual^2)
+SSE
+
+# sum of sqare error number(SSE) isn't really interpretable so let's find root mean square erro(RMSE), which is more interpretable.
+RMSE = sqrt(SSE/nrow(NBA))
+RMSE
+mean(NBA$PTS)
+```
+So making error of 184 points out of average points of 8370 isn't that bad.  
+
+Let's remove some of insignificant variables from the LM.  
+Let's remove the variable that has largest Pr(>|t|) value.
+```{r}
+# removing TOV
+PointsReg2 = lm(PTS ~ X2PA + X3PA + FTA + AST + ORB + DRB + STL + BLK, data = NBA)
+summary(PointsReg2)
+
+# removing DRB
+PointsReg3 = lm(PTS ~ X2PA + X3PA + FTA + AST + ORB + STL + BLK, data = NBA)
+summary(PointsReg3)
+
+# removing BLK
+PointsReg4 = lm(PTS ~ X2PA + X3PA + FTA + AST + ORB + STL, data = NBA)
+summary(PointsReg4)
+```
+
+```{r cache=TRUE}
+SSE_4 = sum(PointsReg4$residuals^2)
+SSE_4
+RMSE_4 = sqrt(SSE_4/nrow(NBA))
+RMSE_4
+```
+
+We are able to keep the RMSE about the same yet looks more simplier and more interpretable.  
+
+```{r cache=TRUE}
+str(NBA_test)
+PointsPredictions = predict(PointsReg4, newdata=NBA_test)  
+SSE = sum((PointsPredictions - NBA_test$PTS)^2)  
+SST = sum((mean(NBA$PTS) - NBA_test$PTS)^2)  
+R2 = 1 - SSE/SST  
+RMSE = sqrt(SSE/nrow(NBA_test))  
+
+PointsPredictions
+SSE
+SST
+R2
+RMSE
+```
+

@@ -1,0 +1,83 @@
+head	1.2;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.2
+date	2016.02.12.07.17.15;	author o2-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2016.02.12.03.56.20;	author o2-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@initial
+@
+
+
+1.2
+log
+@done
+@
+text
+@#include "slave.h"
+#include "common.h"
+
+ShmPTR_t *ShmPTR;    
+
+int main (int argc, char *argv[]) {
+	int curId, i;			// Process ID or tag number
+	curId= atoi(argv[1]);
+	
+	// Initializing shared memory
+	shmInit();
+	
+	// Initializing values in shared memeory
+	ShmPTR->n++;
+	// ShmPTR->flag[0] = 1;
+	
+	// Writing file
+	for (i = 0; i < maxWrite; i++) {
+		// sleep(2);
+		printf("process %d went to que\n", curId+1);
+		process(ShmPTR, curId);
+		printf("process %d finished the job\n", curId+1);
+		// sleep(2);
+	}
+	exit(2);
+}
+
+// Setting up shared memory
+void shmInit () {
+	key_t ShmKEY = ftok(".", 40);
+	int ShmID = shmget(ShmKEY, IPCD_SZ, 0666);
+	if (ShmID == -1) {
+		perror("Failed to create shared memory segment");
+		exit(2);
+	}
+	
+	if (!(ShmPTR = (ShmPTR_t *)(shmat(ShmID, 0, 0)))) {
+		perror("Failed to attach shared memory segment");
+		exit(2);
+    }
+}
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 8
+a8 1
+int main  () {
+d10 32
+a41 1
+}@

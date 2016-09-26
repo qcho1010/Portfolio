@@ -1,0 +1,756 @@
+head	1.10;
+access;
+symbols;
+locks
+	o2-cho:1.10; strict;
+comment	@ * @;
+
+
+1.10
+date	2016.04.30.02.27.19;	author o2-cho;	state Exp;
+branches;
+next	1.9;
+
+1.9
+date	2016.04.29.17.45.37;	author o2-cho;	state Exp;
+branches;
+next	1.8;
+
+1.8
+date	2016.04.29.17.19.15;	author o2-cho;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2016.04.29.03.34.36;	author o2-cho;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2016.04.29.03.14.46;	author o2-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2016.04.27.21.33.38;	author o2-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2016.04.26.16.42.21;	author o2-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2016.04.25.18.00.59;	author o2-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2016.04.23.15.45.42;	author o2-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2016.04.19.17.51.43;	author o2-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@Initial skeleton program
+@
+
+
+1.10
+log
+@Release Candidate 1
+@
+text
+@// RCS DATA AT BOTTOM OF FILE
+
+
+#include <stdio.h>                               // printf()
+#include <stdlib.h>                              // exit()
+#include <unistd.h>                              // sleep(), etc.
+#include <time.h>                                // time()
+#include <wait.h>                                // wait()
+#include <errno.h>                               // perror(), etc.
+#include <sys/ipc.h>                             // Inter-process communication
+#include <sys/shm.h>                             // Shared memory
+#include <sys/sem.h>                             // Semaphores
+#include "ipc_data.h"                            // IPC Data structure
+#include "writelog.h"                            // Log writer
+#include "semops.h"                              // Semaphore operations
+#include "sigcheck.h"                            // Signal processing
+#include "adv_clock.h"                           // Clock advancement
+
+
+#define DEBUGU 0                                 // Enable debugging = 1
+#define IPCD_SZ (sizeof(ipcd_t))                 // Set the size of the IPC data structure
+
+
+// MAIN
+int main(int argc, char *argv[]) {
+
+    // Local variables
+    char msgerr[50] = "";                        // Hold a message to be passed to perror() or writelog()
+    int shmid_ipcd;                              // Shared memory ID
+    int signum;                                  // Hold a signal number
+    ipcd_t *ipcd;                                // Pointer for shared memory
+    int semid_clock, semid_memref;               // Clock and memory semaphore IDs
+    int mypid, mynum;                            // My PID and child ID
+    int SHMKEY, SEMKEY1, SEMKEY2;                // Shared memory and semaphore keys
+    int sleep_secs;                              // Random sleep variable
+    char procname[11] = "";                      // Procname variable to be passed to sem*() and writelog()
+    int ref_count = 0, max_count;                // Counter for memory references
+
+    // We need the process number as an argment
+    if (argc != 2) {
+        fprintf(stderr, "Process number was not passed in call to userproc\n");
+        exit(1);
+    } else {
+        mynum = atoi(argv[1]);
+    }
+
+    srand(time(NULL));                           // Seed the random number generator
+
+    mypid = getpid();                            // Get my process ID
+
+    sprintf(procname, "userproc%02d", mynum);
+
+    if (DEBUGU) printf("%s:\tmy PID is %d\n", procname, mypid);
+
+    sprintf(msgerr, "Starting new run with PID %d", mypid);
+    writelog(msgerr, procname);
+
+
+    /*
+        SHARED MEMORY ALLOCATION
+    */
+
+    // Generate a shared memory key
+    if ((SHMKEY = ftok(".", 47604000)) == -1) {
+        sprintf(msgerr, "%s:\tftok (SHMKEY)", procname);
+        perror(msgerr);
+        exit(1);
+    }
+
+    // Generate a clock semaphore key
+    if ((SEMKEY1 = ftok(".", 47604001)) == -1) {
+        sprintf(msgerr, "%s:\tftok (SEMKEY1)", procname);
+        perror(msgerr);
+        exit(1);
+    }
+
+    // Generate a memory semaphore key
+	int keyid = 47604010 + mynum;
+    if ((SEMKEY2 = ftok(".", keyid)) == -1) {
+        sprintf(msgerr, "%s:\tftok (SEMKEY2)", procname);
+        perror(msgerr);
+        exit(1);
+    }
+
+    // Get the ID of the shared IPC data
+    if ((shmid_ipcd = shmget(SHMKEY, IPCD_SZ, 0600)) == -1) {
+        sprintf(msgerr, "%s:\tshmget", procname);
+        perror(msgerr);
+        exit(1);
+    }
+
+    // Get a pointer to the shared IPC data segment
+    if ( ! (ipcd = (ipcd_t *)(shmat(shmid_ipcd, 0, 0)))) {
+        sprintf(msgerr, "%s:\tshmat", procname);
+        perror(msgerr);
+        exit(1);
+    }
+    writelog("Attached to shared memory for IPC data", procname);
+
+    // Get a semaphore for the logical clock
+    if ((semid_clock = semget(SEMKEY1, 1, 0600)) == -1) {
+        sprintf(msgerr, "%s:\tsemget (clock)", procname);
+        perror(msgerr);
+        exit(1);
+    }
+    writelog("Attached to clock semaphore", procname);
+
+    // Get a semaphore for memory references
+    if ((semid_memref = semget(SEMKEY2, 1, 0600)) == -1) {
+        sprintf(msgerr, "%s:\tsemget (memory)", procname);
+        perror(msgerr);
+        exit(1);
+    }
+    sprintf(msgerr, "Attached to memory reference semaphore (%d)", semid_memref);
+    if (DEBUGU) printf("%s:\t%s\n", procname, msgerr);
+    writelog(msgerr, procname);
+
+    /*
+        WORK LOOP
+    */
+
+    max_count = 30 + ( rand() % 40 );          // random 50 +/- 20
+
+    // Go into loop
+    while (1) {
+
+        // Check for signals
+        if ( ( signum = sigcheck(procname) ) ) {
+            sprintf(msgerr, "Received signal %d - exiting...", signum);
+            writelog(msgerr, procname);
+            break;
+        }
+
+        /*
+            TERMINATION CHECK
+        */
+
+        if ( ref_count >= max_count ) {
+            // Terminate myself
+            ipcd->child_running[mynum] = -1;
+            writelog("***** EXITING *****\n\n", procname);
+            if (DEBUGU) printf("%s:\tExiting...\n", procname);
+            exit(0);
+        }
+        if (DEBUGU) printf("%s:\tChild %02d has made %d memory references\n", procname, mynum, ref_count);
+
+		/*
+            GENERATE MEMORY REFERENCES
+        */
+
+        ipcd->mem_references[mynum][0] = rand() % 32000;  // bytes 0-32000
+        ipcd->mem_references[mynum][1] = rand() % 2;   // 0 for read, 1 for write
+        ref_count++;
+
+        if ( ipcd->mem_references[mynum][1] == 0 )
+             sprintf(msgerr, "Generated read to memory location %d", ipcd->mem_references[mynum][0]);
+        else
+             sprintf(msgerr, "Generated write to memory location %d", ipcd->mem_references[mynum][0]);
+        if (DEBUGU) printf("%s:\t%s\n", procname, msgerr);
+        writelog(msgerr, procname);
+
+        // Wait on memory reference semaphore (exit if interrupt received)
+        sprintf(msgerr, "Waiting on memory semaphore");
+        if (DEBUGU) printf("%s:\t%s\n", procname, msgerr);
+        writelog(msgerr, procname);
+        sem_op(SEMWAIT, semid_memref, procname); 
+
+        /*
+            SLEEP
+        */
+
+        sleep_secs = rand() % 2;                 // Random from 0 to 1
+        //sprintf(msgerr, "Sleep %d", sleep_secs);
+        //writelog(msgerr, procname);
+        //if (DEBUGU) printf("%s:\t%s\n", procname, msgerr);
+        sleep(sleep_secs);
+    }
+
+    return 0;
+}
+
+
+
+// RCS information:
+// $Author: o2-cho $
+// $Date: 2016/04/29 17:45:37 $
+// $RCSfile: userproc.c,v $
+// $Log: userproc.c,v $
+// Revision 1.9  2016/04/29 17:45:37  o2-cho
+// All working without 2nd chance algorithm
+//
+// Revision 1.8  2016/04/29 17:19:15  o2-cho
+// Bug fixes
+//
+// Revision 1.7  2016/04/29 03:34:36  o2-cho
+// Reduce time to process exit
+//
+// Revision 1.6  2016/04/29 03:14:46  o2-cho
+// Many bug fixes
+//
+// Revision 1.5  2016/04/27 21:33:38  o2-cho
+// Add memory reference generator
+//
+// Revision 1.4  2016/04/26 16:42:21  o2-cho
+// Add use of adv_clock function
+//
+// Revision 1.3  2016/04/25 18:00:59  o2-cho
+// Add memory semaphores
+//
+// Revision 1.2  2016/04/23 15:45:42  o2-cho
+// Child cleanup bug fixed
+// Logging and debugging statements updated
+//
+// Revision 1.1  2016/04/19 17:51:43  o2-cho
+// Initial revision
+//
+@
+
+
+1.9
+log
+@All working without 2nd chance algorithm
+@
+text
+@d20 1
+a20 1
+#define DEBUGU 1                                 // Enable debugging = 1
+d122 1
+a122 1
+    max_count = 100 + ( rand() % 200 );          // random 200 +/- 100
+d186 1
+a186 1
+// $Date: 2016/04/29 17:19:15 $
+d189 3
+@
+
+
+1.8
+log
+@Bug fixes
+@
+text
+@d53 1
+a53 1
+    if (DEBUGU) printf("%s\t: my PID is %d\n", procname, mypid);
+d65 1
+a65 1
+        sprintf(msgerr, "%s:\t ftok (SHMKEY)", procname);
+d72 1
+a72 1
+        sprintf(msgerr, "%s:\t ftok (SEMKEY1)", procname);
+d80 1
+a80 1
+        sprintf(msgerr, "%s:\t ftok (SEMKEY2)", procname);
+d87 1
+a87 1
+        sprintf(msgerr, "%s:\t shmget", procname);
+d94 1
+a94 1
+        sprintf(msgerr, "%s:\t shmat", procname);
+d102 1
+a102 1
+        sprintf(msgerr, "%s:\t semget (clock)", procname);
+d110 1
+a110 1
+        sprintf(msgerr, "%s:\t semget (memory)", procname);
+d115 1
+a115 1
+    if (DEBUGU) printf("%s:\t %s\n", procname, msgerr);
+d142 1
+a142 1
+            if (DEBUGU) printf("%s:\t Exiting...\n", procname);
+d145 1
+a145 1
+        if (DEBUGU) printf("%s:\t Child %02d has made %d memory references\n", procname, mynum, ref_count);
+d159 1
+a159 1
+        if (DEBUGU) printf("%s:\t %s\n", procname, msgerr);
+d164 1
+a164 1
+        if (DEBUGU) printf("%s:\t %s\n", procname, msgerr);
+d175 1
+a175 1
+        //if (DEBUGU) printf("%s:\t %s\n", procname, msgerr);
+d186 1
+a186 1
+// $Date: 2016/04/29 03:34:36 $
+d189 3
+@
+
+
+1.7
+log
+@Reduce time to process exit
+@
+text
+@a35 2
+    //int n;                                     // Iteration variable
+    //int wait_milli;                              // Hold the random wait (0-250 milliseconds)
+d53 1
+a53 1
+    if (DEBUGU) printf("%s: my PID is %d\n", procname, mypid);
+d65 1
+a65 1
+        sprintf(msgerr, "userproc%02d: ftok (SHMKEY)", mynum);
+d72 1
+a72 1
+        sprintf(msgerr, "userproc%02d: ftok (SEMKEY1)", mynum);
+d80 1
+a80 1
+        sprintf(msgerr, "userproc%02d: ftok (SEMKEY2)", mynum);
+d87 1
+a87 1
+        sprintf(msgerr, "userproc%02d: shmget", mynum);
+d94 1
+a94 1
+        sprintf(msgerr, "userproc%02d: shmat", mynum);
+d102 1
+a102 1
+        sprintf(msgerr, "userproc%02d: semget (clock)", mynum);
+d110 1
+a110 1
+        sprintf(msgerr, "userproc%02d: semget (memory)", mynum);
+d114 3
+a116 1
+    writelog("Attached to memory reference semaphore", procname);
+d142 1
+a142 1
+            if (DEBUGU) printf("userproc%02d: Exiting...\n", mynum);
+d145 1
+d159 1
+a159 1
+
+a160 1
+        if (DEBUGU) printf("userproc%02d: %s\n", mynum, msgerr);
+d163 3
+d175 1
+a175 1
+        //if (DEBUGU) printf("userproc%02d: %s\n", mynum, msgerr);
+d186 1
+a186 1
+// $Date: 2016/04/29 03:14:46 $
+d189 3
+@
+
+
+1.6
+log
+@Many bug fixes
+@
+text
+@d122 1
+a122 1
+    max_count = 900 + ( rand() % 200 );          // random 1000 +/- 100
+d183 1
+a183 1
+// $Date: 2016/04/27 21:33:38 $
+d186 3
+@
+
+
+1.5
+log
+@Add memory reference generator
+@
+text
+@d150 2
+a151 2
+        mem_references[mynum][0] = rand() % 32000;  // bytes 0-32000
+        mem_references[mynum][1] = rand() % 2;   // 0 for read, 1 for write
+d154 2
+a155 2
+        if ( mem_references[mynum][1] == 0 )
+             sprintf(msgerr, "Generated read reference to memory location %d", mem_references[mynum][0]);
+d157 1
+a157 1
+             sprintf(msgerr, "Generated write reference to memory location %d", mem_references[mynum][0]);
+d162 2
+a163 1
+        sem_op(SEMWAIT, semid_memref, procname); // wait on memory reference semaphore
+d170 1
+a170 1
+        sprintf(msgerr, "Sleep %d", sleep_secs);
+d172 1
+a172 1
+        if (DEBUGU) printf("userproc%02d: %s\n", mynum, msgerr);
+d183 1
+a183 1
+// $Date: 2016/04/26 16:42:21 $
+d186 3
+@
+
+
+1.4
+log
+@Add use of adv_clock function
+@
+text
+@d37 1
+a37 2
+    unsigned int start_sec;                      // Time holder for runtime reference
+    int wait_milli;                              // Hold the random wait (0-250 milliseconds)
+d39 1
+a117 4
+    // Start time holders for run time reference
+    start_sec = ipcd->clock_sec;
+
+
+d122 2
+d138 1
+a138 1
+        if ( ( rand() % 10 ) == 1 && ipcd->clock_sec - start_sec > 0 ) {
+d146 2
+a147 3
+
+        /*
+            CLOCK UPDATE
+d150 8
+a157 4
+        wait_milli = 1 + ( rand() % 250 );       //  Random 1 to 250
+
+        // Wait for the clock to become available
+        sem_op(SEMWAIT, semid_clock, procname);  // wait on clock semaphore
+a158 8
+        // Advance the clock
+        adv_clock(0, wait_milli, 0, procname);
+
+        // Signal that the clock is now available
+        sem_op(SEMSIG, semid_clock, procname);   // signal on clock semaphore
+
+        sprintf(msgerr, "Logical clock is now %d.%03d", ipcd->clock_sec, ipcd->clock_milli);
+        sprintf(msgerr, "%s.%03d", msgerr, ipcd->clock_nano);
+d162 5
+a167 1
+        // Write log entry and sleep
+d182 1
+a182 1
+// $Date: 2016/04/25 18:00:59 $
+d185 3
+@
+
+
+1.3
+log
+@Add memory semaphores
+@
+text
+@d17 1
+d116 1
+a116 1
+    writelog("Attached to clock semaphore", procname);
+d159 1
+a159 5
+        ipcd->clock_milli += wait_milli;
+        if ( ipcd->clock_milli >= 1000 ) {
+            ipcd->clock_sec++;
+            ipcd->clock_milli -= 1000;
+        }
+d185 1
+a185 1
+// $Date: 2016/04/23 15:45:42 $
+d188 3
+@
+
+
+1.2
+log
+@Child cleanup bug fixed
+Logging and debugging statements updated
+@
+text
+@d4 13
+a16 13
+#include <stdio.h>								// printf()
+#include <stdlib.h>								// exit()
+#include <unistd.h>								// sleep(), etc.
+#include <time.h>								// time()
+#include <wait.h>								// wait()
+#include <errno.h>								// perror(), etc.
+#include <sys/ipc.h>							// Inter-process communication
+#include <sys/shm.h>							// Shared memory
+#include <sys/sem.h>							// Semaphores
+#include "ipc_data.h"							// IPC Data structure
+#include "writelog.h"							// Log writer
+#include "semops.h"								// Semaphore operations
+#include "sigcheck.h"							// Signal processing
+d19 2
+a20 2
+#define DEBUGU 0								// Enable debugging = 1
+#define IPCD_SZ (sizeof(ipcd_t))				// Set the size of the IPC data structure
+d26 154
+a179 139
+	// Local variables
+	char msgerr[50] = "";						// Hold a message to be passed to perror() or writelog()
+	int shmid_ipcd;								// Shared memory ID
+	int signum;									// Hold a signal number
+	ipcd_t *ipcd;								// Pointer for shared memory
+	int semid_clock;							// Clock semaphore ID
+	int mypid, mynum;							// My PID and child ID
+	int SHMKEY, SEMKEY1;						// Shared memory and semaphore keys
+	int sleep_secs;								// Random sleep variable
+	//int n;										// Iteration variable
+	unsigned int start_sec;						// Time holder for runtime reference
+	int wait_milli;								// Hold the random wait (0-250 milliseconds)
+	char procname[11] = "";						// Procname variable to be passed to sem*() and writelog()
+
+	// We need the process number as an argment
+	if (argc != 2) {
+		fprintf(stderr, "Process number was not passed in call to userproc\n");
+		exit(1);
+	} else {
+		mynum = atoi(argv[1]);
+	}
+
+	srand(time(NULL));							// Seed the random number generator
+
+	mypid = getpid();							// Get my process ID
+
+	sprintf(procname, "userproc%02d", mynum);
+
+	if (DEBUGU) printf("%s: my PID is %d\n", procname, mypid);
+
+	sprintf(msgerr, "Starting new run with PID %d", mypid);
+	writelog(msgerr, procname);
+
+
+	/*
+		SHARED MEMORY ALLOCATION
+	*/
+
+	// Generate a shared memory key
+	if ((SHMKEY = ftok(".", 47604000)) == -1) {
+		sprintf(msgerr, "userproc%02d: ftok (SHMKEY)", mynum);
+		perror(msgerr);
+		exit(1);
+	}
+
+	// Generate a clock semaphore key
+	if ((SEMKEY1 = ftok(".", 47604001)) == -1) {
+		sprintf(msgerr, "userproc%02d: ftok (SEMKEY1)", mynum);
+		perror(msgerr);
+		exit(1);
+	}
+
+	// Get the ID of the shared IPC data
+	if ((shmid_ipcd = shmget(SHMKEY, IPCD_SZ, 0600)) == -1) {
+		sprintf(msgerr, "userproc%02d: shmget", mynum);
+		perror(msgerr);
+		exit(1);
+	}
+
+	// Get a pointer to the shared IPC data segment
+	if ( ! (ipcd = (ipcd_t *)(shmat(shmid_ipcd, 0, 0)))) {
+		sprintf(msgerr, "userproc%02d: shmat", mynum);
+		perror(msgerr);
+		exit(1);
+	}
+
+	writelog("Attached to shared memory for IPC data", procname);
+
+	// Get a semaphore for the logical clock
+	if ((semid_clock = semget(SEMKEY1, 1, 0600)) == -1) {
+		sprintf(msgerr, "userproc%02d: semget (clock)", mynum);
+		perror(msgerr);
+		exit(1);
+	}
+	writelog("Attached to clock semaphore", procname);
+
+	// Start time holders for run time reference
+	start_sec = ipcd->clock_sec;
+
+
+	/*
+		WORK LOOP
+	*/
+
+	// Go into loop
+	while (1) {
+
+		// Check for signals
+		if ( ( signum = sigcheck(procname) ) ) {
+			sprintf(msgerr, "Received signal %d - exiting...", signum);
+			writelog(msgerr, procname);
+			break;
+		}
+
+		/*
+			TERMINATION CHECK
+		*/
+
+		if ( ( rand() % 10 ) == 1 && ipcd->clock_sec - start_sec > 0 ) {
+			// Terminate myself
+			ipcd->child_running[mynum] = -1;
+			writelog("***** EXITING *****\n\n", procname);
+			if (DEBUGU) printf("userproc%02d: Exiting...\n", mynum);
+			exit(0);
+		}
+
+
+		/*
+			CLOCK UPDATE
+		*/
+
+		wait_milli = 1 + ( rand() % 250 );		//  Random 1 to 250
+
+		// Wait for the clock to become available
+		sem_op(SEMWAIT, semid_clock, procname);	// wait on clock semaphore
+
+		// Advance the clock
+		ipcd->clock_milli += wait_milli;
+		if ( ipcd->clock_milli >= 1000 ) {
+			ipcd->clock_sec++;
+			ipcd->clock_milli -= 1000;
+		}
+
+		// Signal that the clock is now available
+		sem_op(SEMSIG, semid_clock, procname);	// signal on clock semaphore
+
+		sprintf(msgerr, "Logical clock is now %d.%03d", ipcd->clock_sec, ipcd->clock_milli);
+		sprintf(msgerr, "%s.%03d", msgerr, ipcd->clock_nano);
+		writelog(msgerr, procname);
+		if (DEBUGU) printf("userproc%02d: %s\n", mynum, msgerr);
+
+
+		// Write log entry and sleep
+		sleep_secs = 1;
+		sprintf(msgerr, "Sleep %d", sleep_secs);
+		//writelog(msgerr, procname);
+		if (DEBUGU) printf("userproc%02d: %s\n", mynum, msgerr);
+		sleep(sleep_secs);
+	}
+d181 1
+a181 1
+	return 0;
+d188 1
+a188 1
+// $Date: 2016/04/19 17:51:43 $
+d191 4
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@a22 1
+
+d56 1
+a56 1
+	sprintf(msgerr, "Starting new run with PID %d\n", mypid);
+d66 1
+a66 1
+		sprintf(msgerr, "userproc %02d: ftok (SHMKEY)", mynum);
+d73 1
+a73 1
+		sprintf(msgerr, "userproc %02d: ftok (SEMKEY1)", mynum);
+d80 1
+a80 1
+		sprintf(msgerr, "userproc %02d: shmget", mynum);
+d87 1
+a87 1
+		sprintf(msgerr, "userproc %02d: shmat", mynum);
+d96 1
+a96 1
+		sprintf(msgerr, "userproc %02d: semget (clock)", mynum);
+d124 1
+a124 1
+		if ( (rand() % 4) == 1 && ipcd->clock_sec - start_sec > 0 ) {
+d126 3
+a128 2
+			ipcd->child_running[mynum] = 0;
+			writelog("Exiting", procname);
+d155 1
+a155 1
+		if (DEBUGU) printf("userproc %02d: %s\n", mynum, msgerr);
+d161 2
+a162 2
+		writelog(msgerr, procname);
+		if (DEBUGU) printf("userproc %02d: %s\n", mynum, msgerr);
+d172 7
+a178 4
+// $Author:  $
+// $Date:  $
+// $RCSfile:  $
+// $Log:  $
+@

@@ -1,0 +1,99 @@
+head	1.2;
+access;
+symbols;
+locks
+	o2-cho:1.2; strict;
+comment	@ * @;
+
+
+1.2
+date	2016.04.29.03.14.46;	author o2-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2016.04.19.17.51.43;	author o2-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@Initial skeleton program
+@
+
+
+1.2
+log
+@Many bug fixes
+@
+text
+@// RCS DATA AT BOTTOM OF FILE
+
+#include <stdio.h>                               // fprintf()
+#include <signal.h>                              // signal()
+
+// Global variables
+int signum;                                      // Hold a signal number
+
+// Catch signals
+void sigproc(int sig) {
+    signum = sig;
+}
+
+// Process signals
+int sigcheck(char *procname) {
+    signal(SIGINT, sigproc);
+    signal(SIGTERM, sigproc);
+    if (signum == 2 || signum == 15) {
+        if (signum == 2) fprintf(stderr, "%s: Caught CTRL-C (SIGINT)\n", procname);
+        else if (signum == 15) fprintf(stderr, "%s: Caught SIGTERM\n", procname);
+        return signum;
+    }
+    return 0;
+}
+
+
+
+// RCS information:
+// $Author: o2-cho $
+// $Date: 2016/04/19 17:51:43 $
+// $RCSfile: sigcheck.c,v $
+// $Log: sigcheck.c,v $
+// Revision 1.1  2016/04/19 17:51:43  o2-cho
+// Initial revision
+//
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d3 2
+a4 2
+#include <stdio.h>								// fprintf()
+#include <signal.h>								// signal()
+d7 1
+a7 1
+int signum;										// Hold a signal number
+d11 1
+a11 1
+	signum = sig;
+d16 8
+a23 8
+	signal(SIGINT, sigproc);
+	signal(SIGTERM, sigproc);
+	if (signum == 2 || signum == 15) {
+		if (signum == 2) fprintf(stderr, "%s: Caught CTRL-C (SIGINT)\n", procname);
+		else if (signum == 15) fprintf(stderr, "%s: Caught SIGTERM\n", procname);
+		return signum;
+	}
+	return 0;
+d29 7
+a35 4
+// $Author:  $
+// $Date:  $
+// $RCSfile:  $
+// $Log:  $
+@

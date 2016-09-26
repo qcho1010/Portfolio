@@ -1,0 +1,557 @@
+head	1.12;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.12
+date	2015.09.09.23.00.38;	author o-cho;	state Exp;
+branches;
+next	1.11;
+
+1.11
+date	2015.09.09.22.26.57;	author o-cho;	state Exp;
+branches;
+next	1.10;
+
+1.10
+date	2015.09.04.10.25.32;	author o-cho;	state Exp;
+branches;
+next	1.9;
+
+1.9
+date	2015.09.03.02.33.18;	author o-cho;	state Exp;
+branches;
+next	1.8;
+
+1.8
+date	2015.09.03.02.02.41;	author o-cho;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2015.09.02.23.42.58;	author o-cho;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2015.09.02.23.23.56;	author o-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2015.09.02.22.52.51;	author o-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2015.09.02.21.28.35;	author o-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2015.09.02.21.09.14;	author o-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2015.09.02.20.53.49;	author o-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2015.09.02.20.52.08;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@Assignment 1
+env untility
+@
+
+
+1.12
+log
+@Fixed bug that doesn't output env vars. with no argument.
+Cleaner code.
+@
+text
+@// Kyu Cho
+// CS 4760
+// Assignment 1
+// env utility
+// 9/8/15
+
+#include <stdio.h>	// perror()
+#include <unistd.h> // getopt(), optind
+#include <string.h> // strchr(), strncpy()
+#include <stdlib.h> // system(), getenv(), setenv()
+
+void get_env();
+void update_env(char **, int i_flag);
+extern char **environ; // Declaring external envrionment variable
+
+/* command [-i] [name=value ...] [utility [argument ...]] */
+int main(int argc, char **argv) {	
+	int i_flag = 0;
+	int err_flag = 0;
+	int opt;	
+	
+	if (argc == 1) { // if there is no argument, output the current envrionment then terminate
+		get_env();
+		return 0;
+	}
+	
+	if(strchr(argv[1],'-') != NULL) {
+			while((opt = getopt(argc, argv, "i")) != -1) { // the loop, specifies the expected option 'i'
+				switch(opt){
+					case 'i':
+						i_flag = 1;
+						break;
+					default:
+						err_flag = 1;
+						break;
+				}
+			}
+	}
+	
+	char utility[100];
+	int j = 0;
+	for (j; j < 100; j++) // the loop initializing utility
+		utility[j] = '\0';
+		
+	int i = 0;
+	int count = 0;
+	int utility_flag = 0;
+	char **environ = NULL;
+	environ = (char **)malloc(sizeof(char *)*argc);  // allocate memory to store the new variables
+
+	for (i=optind; i < argc; i++) {  // the loop counts the number of variable by funding the '='
+		if (strchr(argv[i], '=')) { // if strchr() found the '=' character in the argument, added into memory
+			environ[count] = argv[i];  // copying the pointers from argv into the array
+			count++;			
+		}	else  { // if the arugment is not "=", store that argument as utility.
+			strcat(utility, argv[i]); // if there is utility command, store it.			
+			strcat(utility, " ");
+			utility_flag = 1;
+		}
+	}
+
+	environ[count] = NULL; // allocate extra NULL entry
+	if(utility_flag == 1) { // if utility argument is included, update the env. value and apply them
+		update_env(environ, i_flag);
+		system(utility);
+	} else if(utility_flag == 0 && err_flag == 0) { // if 'i' argument is included, but not utility argument
+		if (*environ == NULL) // if 'i' argument is included but notrhing changed, terminate the program
+			return 0;
+		update_env(environ, i_flag); //
+		get_env();
+	} else  // Invalid utility or argument error handler
+		perror("");
+		
+	return 0;
+}
+
+// The function modifies env. values
+void update_env(char ** new_environ, int i_flag) {
+	char *name;
+    char *value;
+    char *equalSign;
+	name = (char *)malloc(sizeof(char)*30);
+    value = (char *)malloc(sizeof(char)*1024);
+	
+	while(*new_environ) {
+		equalSign = strchr(*new_environ, '=');	// pass the ptr to equalSign
+        strncpy(name, *new_environ, equalSign - *new_environ); // copy from the beginning of the string till the equalSign, assign to 'name'
+        strcpy(value, equalSign + 1); // copy from after the equalSign to the end, assign to 'value'		
+		if(getenv(name) && i_flag == 0)
+            setenv(name, value, 1); // 1 = replace(overwrite) with original value		
+		else if (!getenv(name) && i_flag == 0)
+            setenv(name, value, 0); // 0 = add into original list
+		else if (i_flag == 1) {
+			clearenv();
+			if(!getenv(name)) 
+				setenv(name, value, 0);	
+		}
+        new_environ++;	// point to next pointer
+	}
+}
+
+// The function print out evn. values
+void get_env() {
+	int i = 0;
+	
+	for (i = 0; environ[i]; i++)
+		printf("%s\n", environ[i]);
+}@
+
+
+1.11
+log
+@Fix bug that doesn't aceept the argument -l with command ls
+@
+text
+@d21 16
+a36 9
+	if(strchr(argv[1], '-')) {			
+		while((opt = getopt(argc, argv, "i")) != -1) { // the loop, specifies the expected option 'i'
+			switch(opt){
+				case 'i':
+					i_flag = 1;
+					break;
+				default:
+					err_flag = 1;
+					break;
+a37 1
+		}
+a39 1
+	
+a43 1
+
+a54 1
+			printf("\nFirst if, loop %d\n", i);
+a58 1
+			printf("\nsecond if loop %d, utility = %s\n", i, utility);
+a59 1
+		printf("\nloop %d, %d, %d\n", i, optind, argc);
+d63 1
+a63 3
+	if (argc == 1)   // if there is no argument, output the current envrionment
+		get_env();
+	else if(utility_flag == 1) { // if utility argument is included, update the env. value and apply them
+@
+
+
+1.10
+log
+@Improved err. handling
+Fix bug that not accepting argument for utility command
+Optimized if statement
+@
+text
+@d21 12
+a32 10
+    while((opt = getopt(argc, argv, "i")) != -1) { // the loop, specifies the expected option 'i'
+        switch(opt){
+            case 'i':
+                i_flag = 1;
+                break;
+            default:
+				err_flag = 1;
+                break;
+        }
+    }
+d46 2
+a47 2
+	
+	for (i = optind; i < argc; i++) {  // the loop counts the number of variable by funding the '='
+d51 1
+d56 1
+d58 1
+d60 1
+a60 2
+	
+	
+@
+
+
+1.9
+log
+@Added system utility function and error handler
+@
+text
+@d2 1
+a2 1
+// CS 4750
+d11 1
+d13 1
+a13 2
+void update_env(char **);
+
+d19 1
+d21 1
+a21 2
+
+     while((opt = getopt(argc, argv, "i")) != -1) { // the loop, specifies the expected option 'i'
+d27 1
+d31 8
+a38 1
+	 
+d41 2
+a42 1
+	char **environ;
+d44 2
+a45 2
+	char *utility = NULL;
+	for (i = optind; i < argc; i++) { 		// the loop counts the number of variable by funding the '='
+d49 5
+a53 2
+		}	else 
+			utility = argv[i];	// if there is utility command, store it.
+d55 2
+d58 9
+a66 2
+	
+	if (argc == 1)  // if there is no argument, output the current envrionment
+d68 4
+a71 9
+	else if (!getopt(argc, argv, "i")) {
+		update_env(environ);
+        get_env();
+	}
+	if(system(utility)  == -1)
+        perror("Invalid Utility Command Line");
+    else 
+		system(utility)
+	return 0; 
+d74 2
+a75 1
+void update_env(char ** new_environ) {
+a78 1
+	
+d85 4
+a88 5
+        strcpy(value, equalSign + 1); // copy from after the equalSign to the end, assign to 'value'
+		
+		if(getenv(name)) 
+            setenv(name, value, 1); // 1 = replace(overwrite) with original value
+        else 
+d90 5
+d99 1
+d101 4
+a104 3
+	int i;
+	for (i=0; environ[i]; i++)
+		printf("environ[%d]: %s\n", i, environ[i]);
+@
+
+
+1.8
+log
+@Added update_env function
+Changed name, print_env -> get_env
+fixed crushing from the loop
+@
+text
+@d16 1
+d20 2
+a21 2
+	
+    while((opt = getopt(argc, argv, "i")) != -1) { // the loop, specifies the expected option 'i'
+a24 1
+				printf("\nargument i has been found\n");
+d30 1
+a30 1
+	
+d45 1
+a45 1
+	if(i_flag==0 && !utility) {  // if there is no argument, output the current envrionment
+d47 1
+a47 1
+	} else {
+d51 4
+a54 3
+	
+	// system(utility);
+	
+a80 1
+	printf("The envrionment list follows:\n");
+@
+
+
+1.7
+log
+@Testing different behavior depending on the arguments
+@
+text
+@d7 6
+a12 5
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h> //getopt, optind
+#include <limits.h>
+#include <string.h> // strchr
+d14 1
+a14 3
+// Declaring external envrionment variable
+extern char **environ;
+void get_env();
+d16 1
+a16 2
+int main(int argc, char **argv) {
+	
+a30 1
+	
+d33 2
+a34 2
+	char **new_environ;
+	new_environ = (char **)malloc(sizeof(char *) * argc);  // allocate memory to store the new variables
+d37 2
+a38 2
+		if (strchr(argv[i], '=') != NULL) { // if strchr() found the '=' character in the argument, added into memory
+			new_environ[count] = argv[i];  // copying the pointers from argv into the array
+d43 1
+a43 1
+	new_environ[count] = NULL; // allocate extra NULL entry
+d45 1
+a45 1
+	if(i_flag==FALSE && cmd==NULL) {  // if there is no argument, output the current envrionment
+d48 2
+a49 1
+		printf("\nArgument is included, todo=update\n");
+d52 1
+d54 21
+a74 8
+	/* printf("\nTotal variable counts %d", count);
+	int j;
+	for(j = 0; j < count; j++){
+			printf("\n%s\n", new_environ[j]);
+	}
+	if (argv[1] == 'i') {
+		i_flag = 1;
+		printf("\n argument 'i' is added\n");
+a75 9
+	
+	if (argc == 1) 
+		printf("\nno arg %s\n", argv[0]);
+	if (argc == 2)
+		printf("\n1 arg %s\n", argv[1]);
+	if (argc == 3)
+		printf("\n2 args %s\n", argv[2]);
+	get_env(); */
+	return 0; 
+d78 1
+a78 1
+void get_env () {
+d81 1
+a81 1
+	for (i=0; environ[i]!=NULL; i++)
+a82 4
+/* 	int i;
+	printf("The envrionment list follows:\n");
+	for (i=0; environ[i]!=NULL; i++)
+		printf("environ[%d]: %s\n", i, environ[i]); */
+@
+
+
+1.6
+log
+@Testing stroing new variables, and printing new variables
+@
+text
+@d15 1
+a15 1
+void print_env();
+d38 1
+a38 1
+	char *cmd = NULL;
+d40 2
+a41 2
+		if (strchr(argv[i], '=') != NULL) { // if strchr found the '=' character in the argument, added into memory
+			new_environ[count] = argv[i]; 
+d44 1
+a44 1
+			cmd = argv[i];
+d46 10
+a55 1
+	printf("\nTotal variable counts %d", count);
+d60 1
+a60 1
+/* 	if (argv[1] == 'i') {
+d71 2
+a72 2
+	print_env();
+	return 0; */
+d75 1
+a75 1
+void print_env () {
+d80 4
+@
+
+
+1.5
+log
+@Added loop to detect the argument i
+Added loop to detect the New variable by searching for '='
+@
+text
+@d18 1
+d20 1
+a20 1
+	int opt;
+d22 1
+a22 2
+	// Specifying the expected option 'i'
+    while((opt = getopt(argc, argv, "i")) != -1) {
+d33 1
+a33 1
+	// This loop counts the number of variable by funding the '='
+d36 6
+a41 2
+	for (i = optind; i < argc; i++) {
+		if (strchr(argv[i], '=') != NULL) {
+d43 2
+a44 1
+		}			
+d47 4
+@
+
+
+1.4
+log
+@Testing string of arguments
+@
+text
+@d9 1
+a9 1
+#include <unistd.h>
+d11 1
+a11 1
+#include <string.h>
+d18 29
+d53 2
+a54 2
+	// print_env();
+	return 0;
+@
+
+
+1.3
+log
+@Testing number of arguments
+@
+text
+@d19 1
+a19 1
+		printf("\nno arg\n");
+d21 1
+a21 1
+		printf("\n1 arg\n");
+d23 1
+a23 1
+		printf("\n2 args\n");
+@
+
+
+1.2
+log
+@Added header files
+Added print_env function
+@
+text
+@d18 7
+a24 2
+	
+	print_env();
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 28
+@

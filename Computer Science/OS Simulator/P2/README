@@ -1,0 +1,46 @@
+CLASS: 
+	CS 4760 - Operating System
+	
+DATE:
+	2/23/16
+
+NOTE:
+	log file from the child is saved in 'cstest' file
+	log file from the parent is saved in master.log
+	
+STUDENT:
+	Kyu S Cho
+	ksc5c7@mail.umsl.edu
+
+FILE LIST:
+	master.c
+	common.c
+	slave.c
+	master.h
+	common.h
+	slave.h
+	makefile
+	RCS
+	README
+
+EXECUTABLE NAME:
+	master.
+
+TO EXECUTE:
+	1.	Execute "make clean" to remove object files and log files
+	2. Execute master -[arg]
+		-h 		// display the menu option
+		-t n 		// set a max time	(default 10)
+		-s n 		// set a max number of slaves (default 19)
+
+	DESCRIPTION:
+			Concurrent UNIX Processes and shared memory
+			
+The goal of this homework is to become familiar with concurrent processing in Unix/Linux using shared memory.
+You will write a program that uses multiple processes to write a message into a _le. The multiple processes compete
+to get exclusive access to the _le to write into, participating in the race condition. You will use the multiple process
+synchronization algorithm for critical section problem. Generate 19 processes using a master process and make them
+write into a _le called cstest in the directory where the processes are running from. The message to be written into
+the _le is:		File modified by process number xx at time hh:mm
+where xx is the process number as specified in the master. The value of xx is between 1 and 19 (master process is
+taken to be process 0). This implies that the child process will be run by the command

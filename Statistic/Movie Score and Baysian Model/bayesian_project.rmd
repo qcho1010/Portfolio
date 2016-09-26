@@ -1,0 +1,221 @@
+---
+title: "Bayesian modeling and prediction for movies"
+output: 
+  html_document: 
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE, warning = F}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+library(BAS)
+```
+
+### Load data
+
+
+```{r load-data}
+setwd("C:/Users/Kyu/Documents/specialization/22-Master Statistics with R (Duke University)/data")
+load("movies.Rdata")
+```
+
+
+
+* * *
+
+## Part 1: Data
+The documentation for the data set states that it contains 651 randomly sampled movies produced and released before 2016. Hence, the results from a statistical analysis should be generalizable to the population of movies over that time period. However, the results would not be generalizable to movies outside that scope.  
+
+Causality can only be inferred if the sample is reasonably balanced with respect to all variables which influence the outcome variable (left unspecified at this point). Random sampling does tend to balance across all variables so causality might be a reasonable feature of this study.  
+
+* * *
+
+## Part 2: Data manipulation
+
+```{r cache=T}
+library(dplyr)
+movies <- mutate(movies, feature_film = as.factor(ifelse(title_type=="Feature Film","yes","no")), 
+                drama = as.factor(ifelse(genre=="Drama", "yes","no")),
+                mpaa_rating_R = as.factor(ifelse(mpaa_rating=="R","yes","no")),               
+                oscar_season = as.factor(ifelse(thtr_rel_month %in% c(10,11,12),"yes","no")),              
+                summer_season = as.factor(ifelse(thtr_rel_month %in% c(5,6,7,8),"yes","no")))
+movies$exp_as=exp(movies$audience_score/50.0)
+```
+
+The R system creates some indicator variables that comprise the original variable name plus a termination of 'yes'. These simply mean that the new variable indicates whether the original variable is 'yes' or not. I will interchangeably refer to these indicator variables as 0/1 or 'no/yes' variables.  
+
+
+* * *
+
+## Part 3: Exploratory data analysis
+
+
+```{r cache=T}
+par(mfrow=c(2,3))
+boxplot(audience_score~feature_film,movies, main="audience_score vs \n feature_film(y/n)")
+boxplot(audience_score~drama,movies, main="audience_score vs \n drama(y/n))")
+boxplot(audience_score~mpaa_rating_R,movies, main="audience_score vs \n mpaa_rating_R(y/n)")
+boxplot(audience_score~oscar_season,movies, main="audience_score vs \n oscar_season(y/n)")
+boxplot(audience_score~summer_season,movies, main="audience_score vs \n summer_season(y/n)")
+```
+
+The variable that shows greatest separation of medians is 'feature_film', followed by 'drama' and then by 'oscar_season'. The remaining variables ('mpaa_rating_R' and 'summer_season' ) will be unlikely to contribute significantly to prediction of audience score, although they might have a worthwhile marginal contribution.  
+
+```{r cache=T}
+par(mfrow=c(1,2))
+plot(density(movies$audience_score), type="l", main="Density of \n audience_score", ylim=c(0.0, 0.02))
+plot(density(movies$exp_as), type="l", main="Density of \n exp(audience_score")
+```
+
+The density of 'audience_score' is bi-modal, and is far from being normally distributed. It shows signs also of being left-skewed. By applying the transformation exp_as=exp(audience_score/50) the skewness can be mitigated although the bimodality remains.  
+
+```{r cache=T}
+summary( movies[,c("audience_score")] )
+```
+Examine whether any of the explanatory variables (in addition to 'feature_film') can contribute towards explaining 'audience_score'.  
+
+```{r cache=T}
+with(movies, tapply(audience_score, list(Feature_Film=feature_film,Drama=drama), mean) )
+```
+This shows that the drama variable separates each of the feature_film classes into materially distinct groups within the feature_film='no' class, and hence might be useful in a model.  
+
+```{r cache=T}
+with(movies, tapply(audience_score, list(Feature_Film=feature_film,Oscar_Season=oscar_season), mean) )
+```
+This shows that the Oscar_Season variable does not separate each of the feature_films classes into materially distinct groups.  
+
+* * *
+
+## Part 4: Modeling
+
+```{r cache=T}
+audience_score_no_na = na.omit(movies)
+exp_bma_audience_score = bas.lm(exp_as~feature_film + drama + runtime + mpaa_rating_R + thtr_rel_year
+                            + imdb_rating + imdb_num_votes + critics_score + best_pic_nom + best_pic_win 
+                            + best_actor_win + best_actress_win + best_dir_win + top200_box, 
+                            data = audience_score_no_na, prior = "ZS-null", 
+                            modelprior = uniform(), initprobs="eplogp")
+```
+
+### Model Diagnostics (1 of 7)
+```{r cache=T}
+par(mfrow=c(1,2))
+plot(exp_bma_audience_score, which = 1, ask=FALSE, caption="", sub.caption="", cex=0.8)
+plot(exp_bma_audience_score, which = 2, ask=FALSE, caption="", sub.caption="", cex=0.8)
+```
+
+### Model Diagnostics (2 of 7)
+```{r cache=T}
+par(mfrow=c(1,2))
+plot(exp_bma_audience_score, which = 3, ask=FALSE, caption="", sub.caption="", cex=0.8)
+plot(exp_bma_audience_score, which = 4, ask=FALSE, caption="", sub.caption="", cex=0.8)
+```
+
+The Model Dimension plot appears to indicate that there are good models to be found at low dimension, e.g. 2-7 of the 14 independent variables. The Marginal Inclusion Probability plot identifies the most important variables for the model (barring effects of high dependencies).  
+
+### Model Diagnostics (3 of 7)
+```{r cache=T}
+par(mfrow=c(1,1))
+image(exp_bma_audience_score, rotate=F)
+```
+The multicolored Model Rank plot indicates that critics_score and best_pic_nom are equivalent as are best_pic_win, best_actor_win, best_actor_win and best_actress_win in terms of explanatory effect for audience_score.  
+
+### Model Diagnostics (1 of 4): Top 5 Models
+```{r cache-T}
+summary(exp_bma_audience_score) # Best model variable indicators
+```
+
+Note that the classical R^2 measure for model 2 is very slightly higher than that for the best BMA model which has a Bayes factor (BF) twice that of Model 2. Model 2 additionally includes the best_actress_win indicator variable( which is why its R^2 must be at least as high,of course).  
+
+### Model Diagnostics (4 of 7): Marginal Posterior Inclusion Probabilities of the Best Model  
+```{r cache=T}
+exp_bma_lv=exp_bma_audience_score[[1]]
+exp_bma_ln=exp_bma_audience_score$names
+exp_bma_lm_inds=setNames(exp_bma_lv,exp_bma_ln)
+exp_bma_lm_inds
+```
+
+As can be seen above, the variables with MPI probabilities > 0.5 have been included in the best model.  
+
+### Model Diagnostics (5 of 7): Posterior Probability of the Best Model
+```{r cache=T }
+max(exp_bma_audience_score$postprob) # What is the posterior prob of the best model?
+
+coef_exp_bma_audience_score=coef(exp_bma_audience_score)
+```
+
+### Model Diagnostics (6 of 7): Distribution of the Significant Coefficients
+
+```{r cache=T}
+par(mfrow=c(1,3))
+plot(coef_exp_bma_audience_score, subset=c(1,2,4), ask=F)
+```
+
+```{r cache=T}
+par(mfrow=c(1,3))
+plot(coef_exp_bma_audience_score, subset=c(6,7,8), ask=F)
+```
+
+```{r cache=T}
+par(mfrow=c(1,3))
+plot(coef_exp_bma_audience_score, subset=c(9,10), ask=F)
+```
+
+The solid vertical bars are the probabilities of the coefficient being 0.  
+
+### Model Diagnostics (7 of 7): Mean Value of Each Full Model Coefficient
+```{r cache=T}
+coef_exp_bma_audience_score
+```
+
+While the best model includes only eight dependent variables, I show the mean values of the coefficients for all of the variables considered in the BMA model which takes averages over all of the models (where the coefficient is non-zero). Hence my final model for prediction is not the reduced model, but the BAS model object which will average over all of its component models as default behaviour.  
+
+My BAS model specification is of the form  
+
+exp(audience_score/50)=X*beta  
+
+where beta is a vector of regression coefficients and X is a vector of predictor variables including 1 (intercept).  
+
+Some of the predictor variables are 0/1 (aka yes/no) and others are numeric (e.g. thtr_rel_year) so comparing just the magnitude of the coefficients is not sufficient to judge relative importance. It is possible to reduce the scale of numeric variables by subtracting the min value and dividing that result by (min-max) and so reducing the variable to a variable defined over the real interval from 0 to 1. I have not done so here.  
+
+In general, the value of each coefficient is the amount by which exp(audience_score/50) changes when the dependent variable associated with it increases by 1 unit.  
+
+For the variables that terminate with the 'yes' suffix (aka 1 indicator), it is the amount attributable to having the 'yes' (aka 1) indicator value. If the indicator is "no" (aka 0) then the coefficient is multiplied by 0 and subsequently makes no contribution to the prediction of exp(audience_score/50).  
+
+Of the the 7 most significant dependent variables (excluding the intercept) that comprise the best model, 3 (feature_films, runtime and thtr_rel_year) have a diminishing effect on audience score. The 4 remaining variables in the best model augment audience_score, and they are: imbd_rating, imbd_num_votes, critics_score and best_pic_nom.
+
+
+* * *
+
+## Part 5: Prediction
+
+```{r cache=T}
+dory=movies[1,c("exp_as", "feature_film", "drama", "runtime","mpaa_rating_R", "thtr_rel_year", "imdb_rating", "imdb_num_votes",                   "critics_score","best_pic_nom","best_pic_win", "best_dir_win", "best_actor_win", "best_actress_win", "top200_box")]
+summary(dory)
+```
+
+```{r cache=T}
+dory$exp_as=1.0; dory$feature_film="yes"; dory$drama="no";
+#yhat = predict(exp_bma_audience_score, newdata=dory, estimator="BMA", se=F)
+#yhat
+#50*log(yhat)
+```
+
+* * *
+
+## Part 6: Conclusion
+
+Official ratings are good predictors of audience_score. This is totally unsurprising as these ratings summarise many complex factors that determine movie popularity. Of interest is prediction using only factual information concerning the type of movie, its running time and the popularity of the actors. Then one could attempt prediction without relying on data from official ratings sites.  
+
+The variables constructed early in this exercise are in general not useful for good prediction, apart from the feature_film indicator. The official variables are dominant multi-dimensional syntheses of what determines audience score and hence are of greater importance in prediction.  
+
+A shortcoming of the full model is that it depends on obtaining data from IMBD and Rotten Tomato ratings.  
+
+The exercise was very interesting from the point of view of using Bayesian techniques for model selection.  

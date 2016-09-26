@@ -1,0 +1,3 @@
+|        Title       |                                     Algorithms                                     | Industry | Language |   Class   |         Institution         |
+|:------------------:|:----------------------------------------------------------------------------------:|:--------:|:--------:|:---------:|:---------------------------:|
+| Sorting Algorithms | Quick Sort, Merge Sort, Bubble Sort, Bubble Sort2, Insertion Sort, Selection Sort, |     -    |   Java   | Algorithm | Univ. of Missouri-St. Louis |

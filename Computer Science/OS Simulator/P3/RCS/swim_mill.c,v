@@ -1,0 +1,488 @@
+head	1.11;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.11
+date	2015.09.30.07.14.33;	author o-cho;	state Exp;
+branches;
+next	1.10;
+
+1.10
+date	2015.09.30.07.05.01;	author o-cho;	state Exp;
+branches;
+next	1.9;
+
+1.9
+date	2015.09.30.06.00.39;	author o-cho;	state Exp;
+branches;
+next	1.8;
+
+1.8
+date	2015.09.29.11.48.19;	author o-cho;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2015.09.29.05.00.28;	author o-cho;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2015.09.28.11.26.41;	author o-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2015.09.27.23.29.41;	author o-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2015.09.25.19.43.28;	author o-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2015.09.25.05.10.55;	author o-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2015.09.23.21.53.19;	author o-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2015.09.23.21.46.40;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@swim_mill.c
+@
+
+
+1.11
+log
+@*** empty log message ***
+@
+text
+@#include <sys/types.h>  
+#include <sys/ipc.h> 
+#include <sys/shm.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h> 
+#include <stdint.h>
+#include <signal.h>
+#include <unistd.h>
+#include <time.h>
+#include "swim_mill.h"
+
+int usr_interrupt;
+int ShmID;
+int ShmID2;
+char (*ShmPTR)[11] ;
+struct Memory *ShmPTR2;
+int idArr[20];
+
+void sig_handler(int signo) {
+	int i;
+	if (signo == SIGINT)
+		fprintf(stderr,"\nParent: Dying because of the inturrupt\n");
+	usr_interrupt=1;
+	
+	for (i=0; i<20; i++) 
+		kill(idArr[i], signo);
+	shmctl(ShmID, IPC_RMID,  0);
+	shmctl(ShmID2, IPC_RMID,  0);
+	exit(1);
+}
+
+int main() {
+	signal(SIGINT, sig_handler);
+	srand(time(0));
+    system("clear");
+	int x, y, i, status; 
+	double delay = 0.0;
+	pid_t cpid;
+	key_t ShmKEY= 5678, ShmKEY2 = 7890;
+	
+	// Get shared memory segment identifier
+    ShmID = shmget(ShmKEY, sizeof(int[23][23]), 0666|IPC_CREAT|IPC_EXCL);
+	ShmID2 = shmget(ShmKEY2, sizeof(struct Memory), 0666|IPC_CREAT|IPC_EXCL);
+	if (ShmID == -1 ||ShmID2 == -1) {
+		perror("Failed to create shared memory segment");
+		return 1;
+	}
+	char (*ShmPTR)[23] = shmat(ShmID, NULL, 0);
+	struct Memory *ShmPTR2 = shmat(ShmID2, NULL, 0);
+	if ((int *)ShmPTR  ==  (int *)-1 || (int *)ShmPTR2 == (int *)-1) {
+      perror("Failed to attach shared memory segment");
+	  shmctl(ShmID, IPC_RMID,  0);
+	  shmctl(ShmID2, IPC_RMID,  0);
+      return 1;
+	}
+	int n = 20;  // number of total fish and pellet processors
+	ShmPTR2->turn = 0; // start turn with 0
+	ShmPTR2->status = -1;	// SEt 'not ready' untill the first pellet is dropped
+	
+	for (y=0;y<20; y++) {			// Initialize to idle state to all pellets
+		ShmPTR2->empty[y] = 1;		// Set as empty
+	}
+
+	// Initializing the grid
+	for (y=0; y<23; y++) {
+		for (x=0; x<23; x++) 
+			ShmPTR[y][x] = '.';
+	}
+	
+	// Fish process
+	cpid = fork();
+	idArr[0] = cpid;
+	if (cpid == 0) {
+		execlp("fish", "fish", NULL);
+		printf ("EXEC Failed\n");
+	} else if (cpid == -1) {
+		perror ("Failed to create fish process") ;
+		return 1;
+	} else {
+		// parents create multiple pellet process at randome intervel
+		for (i=0; i < (n-1); i++) {
+			delay = rand()%1 + 1;
+			usleep(1000000*delay);
+			cpid = fork();
+			idArr[i+1] = cpid;
+		  if (cpid == 0) {
+			  execlp("pellet", "pellet", NULL);
+			  printf ("EXEC Failed\n");
+		  } else if (cpid == -1) {
+			  perror ("Failed to create pellet process") ;
+			  shmdt((void *)ShmPTR);
+			  shmdt((void *)ShmPTR2);
+			  shmctl(ShmID, IPC_RMID,  0);
+			  shmctl(ShmID2, IPC_RMID,  0);
+			return 1;
+		  }
+		}
+	}
+	// Parent waits for all the children to terminate
+   for (i=0; i < n; i++) {
+      cpid = wait(&status);
+	  // if (WEXITSTATUS(status) != 0)
+		  // printf("Parent(%d): Child %d exited with status %d\n", getpid(), cpid, WEXITSTATUS(status));
+	  // else 
+		  // printf("Parent(%d): Child %d was killed off with status %d\n", getpid(), cpid, WEXITSTATUS(status));
+   }
+   
+	shmdt((void *)ShmPTR);
+	shmdt((void *)ShmPTR2);
+	shmctl(ShmID, IPC_RMID,  0);
+	shmctl(ShmID2, IPC_RMID,  0);
+	return 0;
+}
+
+
+
+
+
+
+
+@
+
+
+1.10
+log
+@Enlarge the board
+@
+text
+@d11 1
+@
+
+
+1.9
+log
+@Solve the dead lock problem
+@
+text
+@d1 1
+a1 1
+#include <sys/types.h>  //key_t
+d7 1
+a7 1
+#include <errno.h> //errno
+d37 2
+a38 1
+	int x, y, i, status, delay;
+d41 1
+d43 1
+a43 1
+    ShmID = shmget(ShmKEY, sizeof(int[11][11]), 0666|IPC_CREAT|IPC_EXCL);
+d49 1
+a49 1
+	char (*ShmPTR)[11] = shmat(ShmID, NULL, 0);
+a57 1
+	// ShmPTR2->flag[0] = 1; // set fish's flag as idle
+d59 1
+a59 1
+	ShmPTR2->status = -1;
+d66 2
+a67 2
+	for (y=0; y<11; y++) {
+		for (x=0; x<11; x++) 
+d81 1
+a81 1
+		// parents create multiple pellet process
+d83 2
+a84 2
+			delay = rand() % 2 + 1;
+			sleep(delay);
+d100 1
+a100 1
+	/* Parent waits for all the children to terminate */
+a101 1
+      /* Parent waits for any child to terminate */
+a102 1
+      /* Parent uses the exit status to identify the child */
+@
+
+
+1.8
+log
+@Fixed lagging
+@
+text
+@d14 5
+d21 3
+a23 2
+  if (signo == SIGINT)
+    fprintf(stderr,"Parent: Dying because of the inturrupt\n");
+d25 6
+d37 1
+a37 1
+	int x, y, i, status;
+d41 2
+a42 2
+    int ShmID = shmget(ShmKEY, sizeof(int[11][11]), 0666|IPC_CREAT|IPC_EXCL);
+	int ShmID2 = shmget(ShmKEY2, sizeof(struct Memory), 0666|IPC_CREAT|IPC_EXCL);
+d55 2
+a56 2
+	int n = ShmPTR2->n = 5;  // number of total fish and pellet processors
+	ShmPTR2->flag[0] = 1; // set fish's flag as idle
+d60 3
+d69 5
+a73 2
+	if (cpid = fork() == 0) {
+		// Fish process
+d82 2
+a83 1
+			ShmPTR2->flag[i+1] = 0; // start flag with empty
+d85 1
+a85 1
+			sleep(1);
+d104 4
+a107 4
+	  if (WEXITSTATUS(status) != 0)
+		  printf("Parent(%d): Child %d exited with status %d\n", getpid(), cpid, WEXITSTATUS(status));
+	  else 
+		  printf("Parent(%d): Child %d was killed off with status %d\n", getpid(), cpid, WEXITSTATUS(status));
+d115 8
+a122 1
+}@
+
+
+1.7
+log
+@final
+@
+text
+@a83 1
+	  sleep(1);
+@
+
+
+1.6
+log
+@Added solution 4 cretical section
+@
+text
+@a8 1
+#include "swim_mill.h"
+d11 1
+a12 1
+int alarmFlag = 0 ;
+d17 1
+a17 1
+    fprintf(stderr,"\nParent Dying because of the inturrupt\n");
+a20 1
+
+d23 1
+d43 1
+a43 1
+	int n = ShmPTR2->n = 2;  // number of total fish and pellet processors
+@
+
+
+1.5
+log
+@Added process funtion
+Big optimization for loop iteration
+@
+text
+@d10 11
+d24 1
+d44 2
+d47 3
+a49 1
+	int n = ShmPTR2->n = 2;  // number of total fish and pellet processors
+a54 2
+
+	ShmPTR2->flag[0] = 1; // set fish's flag as idle
+@
+
+
+1.4
+log
+@Tested sharing the distance values between proceeses
+@
+text
+@d8 1
+d11 1
+a12 8
+	int rows = 11, cols = 11, x, y, k = 0;
+	int arr[rows][cols];
+	int status ;	
+	int ShmID, ShmID2;
+	key_t ShmKEY, ShmKEY2;
+	ShmKEY = 5678;
+	ShmKEY2 = 6789;
+	
+d14 3
+d18 3
+a20 2
+    ShmID = shmget(ShmKEY, sizeof(int[rows][cols]), 0666|IPC_CREAT|IPC_EXCL);
+	if (ShmID == -1) {
+d24 3
+a26 2
+	char (*ShmPTR)[11]=  (int*)shmat(ShmID, NULL, 0);
+	if ((int) ShmPTR  == -1) {
+a28 12
+      return 1;
+	}
+	
+		// Get shared memory segment identifier
+    ShmID2 = shmget(ShmKEY2, 20*sizeof(int), 0666|IPC_CREAT|IPC_EXCL);
+	if (ShmID2 == -1) {
+		perror("Failed to create shared memory segment");
+		return 1;
+	}
+	int ShmPTR2=  (int*)shmat(ShmID2, NULL, 0);
+	if ((int) ShmPTR2  == -1) {
+      perror("Failed to attach shared memory segment");
+d32 5
+a36 6
+	
+	
+	
+	// initializing
+	for (y=0; y<rows; y++) {
+		for (x=0; x<cols; x++) {
+a37 1
+		}
+d40 1
+a40 2
+	int i;
+	pid_t cpid;
+d42 1
+a42 1
+		//fish process
+d50 4
+a53 3
+		for (i=0; i < 2; i++) {
+		  cpid = fork();
+		  sleep(2);
+d58 5
+a62 3
+			perror ("Failed to create pellet process") ;
+			shmdt((void *)ShmPTR);
+			shmctl(ShmID, IPC_RMID,  0);
+d68 1
+a68 1
+   for (i=0; i < 3; i++) {
+d71 1
+a71 1
+		sleep(1);
+d84 1
+a84 1
+}
+@
+
+
+1.3
+log
+@Added another shared memory to store the pellet's coordinate
+@
+text
+@d66 1
+a66 1
+		for (i=0; i < 5; i++) {
+d81 1
+a81 1
+   for (i=0; i < 6; i++) {
+d89 1
+a89 1
+		  printf("Parent(%d): Child %d was killed off with status %dn", getpid(), cpid, WEXITSTATUS(status));
+@
+
+
+1.2
+log
+@added shared memory management
+tested sharing 2d array
+tested wait function
+tested execl function
+tested fork function
+added failture mangement
+@
+text
+@d14 2
+a15 2
+	int ShmID;
+	key_t ShmKEY;
+d17 1
+a26 1
+    // ShmPTR = (struct Memory *) shmat(ShmID, NULL, 0);
+d32 16
+a47 1
+	// printf("swim_mill Attached the shared memory...\n");
+d66 1
+a66 1
+		for (i=0; i < 1; i++) {
+d68 1
+d81 1
+a81 1
+   for (i=0; i < 2; i++) {
+d84 1
+d86 4
+a89 4
+	  // if (WEXITSTATUS(status) != 0)
+		  // printf("Parent(%d): Child %d exited with status %d\n", getpid(), cpid, WEXITSTATUS(status));
+	  // else 
+		  // printf("Parent(%d): Child %d was killed off with status %dn", getpid(), cpid, WEXITSTATUS(status));
+d93 1
+d95 1
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 78
+@

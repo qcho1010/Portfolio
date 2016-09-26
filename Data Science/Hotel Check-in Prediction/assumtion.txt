@@ -1,0 +1,60 @@
+Assume x,y coordinate is marked when people start to search for the location on their smartphone
+
+Assume they have way to check the information online right away
+	meaning they know following info
+		which place is closer
+		which place is popular
+		if the place is close or open
+	but they do not know
+		if the place if full
+		so ex) if person check A when place 1 is closer but it's full at that time then move to next
+			need to know the population distribution at that time... 
+			if it's full, then they have to go to second option
+		
+
+so eventhough the location is closer, we need to assume the following
+	people will check for
+		rating (popularity)
+		distance 
+		time (if time is okay, person is willing to drive furture)
+			find the pattern
+			most active time is closer to day time
+			least active time is closer to night time
+		capacity at that time		
+
+		
+density that at that time because if the location is full then go to the closer one?
+	how to determin next one 
+		rating (popularity)
+		distance 
+		time
+
+cleaning x,y ?
+	Set some threshhold for location accuracy to reduce the noise
+
+New variables
+cluster them by x,y
+	hour, day
+croud level
+	by hour, day
+open and close time
+popularity rank by total count
+
+distances for next possible one
+Finding the maximum, minimum, average capacity 
+	within the hour, day interval 
+
+centroid for each location
+
+
+ http://www.listendata.com/2016/01/cluster-analysis-with-r.html
+ http://www.listendata.com/2016/01/validate-cluster-analysis.html
+ https://rpubs.com/msundar/large_data_analysis
+ 
+ time section each id has unique pattern or cycle. there is a daily pattern for individual places. 
+	increase section
+	horizontal section
+	decreasing section
+
+May need to change the time into repeatable pattern since the time is continous
+some business are seasonal

@@ -1,0 +1,483 @@
+head	1.5;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.5
+date	2015.11.9.15.02.11;	author o-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2015.11.9.12.00.28;	author o-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2015.11.7.08.42.06;	author o-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2015.11.7.5.16.40;	author o-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2015.11.6.10.23.07;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@proj start
+@
+
+
+1.5
+log
+@added semaphore wait and signal function and log function
+@
+text
+@#include "oss.h"                           
+
+int ShmID;                                  
+int signum;                                     
+char msgerr[50] = "";                         
+ShmPTR_t *ShmPTR;                                    
+int SemID_clock;                            
+int SemID_res;                                  
+int mypid;                                      
+int curI;                                  
+
+int main(int argc, char *argv[]) {
+    srand(time(NULL));                        
+    int ShmKEY  = ftok(".", 43);     
+    int SemKEY1 = ftok(".", 44);        
+    int SemKEY2  = ftok(".", 45);       
+    int sleep_secs, n, wait_milli, release, request;                      
+    unsigned int start_sec;                 
+	curI = atoi(argv[1]);
+    mypid = getpid();                            
+
+    sprintf(msgerr, "New child forked PID: %d", mypid);
+    writelog(msgerr);
+
+	// Shared Memory Initialization
+    if ((ShmID = shmget(ShmKEY, IPCD_SZ, 0600)) == -1) {
+		perror("shmget Err");
+        exit(1);
+    }
+  if ( ! (ShmPTR = (ShmPTR_t *)(shmat(ShmID, 0, 0)))) {
+		perror("shmat Err");
+        exit(1);
+    }
+	// Semaphore Memory Initialization for Clock
+    if ((SemID_clock = semget(SemKEY1, 1, 0600)) == -1) {
+		perror("semget Err clock");
+        exit(1);
+    }
+	// Semaphore Memory Initialization for Resource
+    if ((SemID_res = semget(SemKEY2, 1, 0600)) == -1) {
+		perror("semget Err resource");
+        exit(1);
+    }
+    writelog("Successfully Attached clock and resource semaphores");
+	
+    int res_use;                                 
+    for (n = 0; n < resMax; n++) {
+        res_use = rand() % 4;	// have 25% of chance to use all resources
+        if ( res_use == 1 ) {
+            ShmPTR->resources[n].max_claim[curI] = 1 + (rand() % ShmPTR->resources[n].inst_tt);
+            sprintf(msgerr, "Resource Claimed = MAX %d", ShmPTR->resources[n].max_claim[curI]);
+            writelog(msgerr);
+        }
+    }
+
+    // Initialize statistics
+    ShmPTR->throughput[curI] = 0;
+    ShmPTR->wait_time[curI] = 0;
+    ShmPTR->cpu_util[curI] = 0;
+    start_sec = ShmPTR->secTime;
+	
+	
+    while (1) {
+        if ( sigcheck() ) {
+            sprintf(msgerr, "Received signal %d - exiting...", signum);
+            writelog(msgerr);
+            break;
+        }
+
+        if ( (rand() % 10) == 1 && ShmPTR->secTime - start_sec > 0 ) {
+            for (n = 0; n < resMax; n++) {
+                ShmPTR->resources[n].request[curI] = 0;
+                ShmPTR->resources[n].release[curI] = ShmPTR->resources[n].allocated[curI];
+            }
+            ShmPTR->childTaken[curI] = 0;
+            exit(0);
+        }
+
+
+        for (n = 0; n < resMax; n++) {
+            // Request or Release algorithm 
+            if ( ShmPTR->resources[n].allocated[curI] > 0 && rand() % 2 == 1 ) {
+                if ( rand() % 2 == 1 ) {
+                    release = rand() % ShmPTR->resources[n].allocated[curI];
+
+                    sem_wait(SemID_res);        
+                    ShmPTR->resources[n].release[curI] += release;
+                    sem_signal(SemID_res);     
+
+                    sprintf(msgerr, "Released %d instances of resource %d", release, n);
+                    writelog(msgerr);
+
+                    ShmPTR->cpu_util[curI] += 10; 
+                }
+            } else if ( ShmPTR->resources[n].request[curI] == 0 ) {
+                if ( ShmPTR->resources[n].max_claim[curI] > 0 && rand() % 2 == 1 ) {
+                    // Requesting Resource 
+                    request = rand()%( ShmPTR->resources[n].max_claim[curI] - ShmPTR->resources[n].allocated[curI] );
+
+                    if ( request > 0 ) {        // negative number avoidance
+                        sem_wait(SemID_res);     
+                        ShmPTR->resources[n].request[curI] = request;
+                        sem_signal(SemID_res);  
+
+                        sprintf(msgerr, "Requested %d instances of resource %d", request, n);
+                        writelog(msgerr);
+
+                        ShmPTR->cpu_util[curI] += 15000000; 
+                    }
+                }
+            }
+        }
+		// Random time btw 0 to 250
+        wait_milli = 1 + ( rand() % 250 );       
+
+        sem_wait(SemID_clock);       
+		
+        ShmPTR->milliTime += wait_milli;
+        if ( ShmPTR->milliTime >= 1000 ) {
+            ShmPTR->secTime++;
+            ShmPTR->milliTime -= 1000;
+        }
+        sem_signal(SemID_clock);              
+		ShmPTR->wait_time[curI] += wait_milli;
+
+		
+        sprintf(msgerr, "Logical clock is now %d.%03d%s.%03d", ShmPTR->secTime, ShmPTR->milliTime, msgerr, ShmPTR->nanoTime);
+        writelog(msgerr);
+
+        sleep_secs = 1;
+        sprintf(msgerr, "Sleep %d", sleep_secs);
+        writelog(msgerr);
+        sleep(sleep_secs);
+    }
+
+    return 0;
+}
+
+
+// Catch signals
+void sigproc(int sig) {
+    signum = sig;
+}
+
+// Process signals
+int sigcheck() {
+    signal(SIGINT, sigproc);
+    signal(SIGTERM, sigproc);
+	if (signum == 2) fprintf(stderr, "userproc %02d: Caught CTRL-C (SIGINT)\n", curI);
+    return 0;
+}
+
+// Log function
+void writelog(char *msg) {
+    char logname[15] = "";
+    sprintf(logname, "userproc%02d.log", curI);
+
+    FILE *fp;
+    if (!(fp = fopen(logname, "a"))) {
+		sprintf(msgerr, "userproc %02d: opening %s", curI, logname);
+        perror(msgerr);
+        exit(1);
+    }
+
+    time_t now;
+    struct tm *timeinfo;
+    time(&now);
+    timeinfo = localtime(&now);
+
+    fprintf(fp, "%02d:%02d:%02d\t", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+    fprintf(fp, "userproc %02d:\t%s\n", curI, msg);
+    fclose(fp);
+}
+
+// Wait Function
+void sem_wait(int semid) {
+	struct sembuf sbuf;					
+	sbuf.sem_num = 0;							
+	sbuf.sem_op = -1;							
+	sbuf.sem_flg = 0;							
+	if (semop(semid, &sbuf, 1) == -1) {
+			exit(0);
+	}
+	return;
+}
+
+// Singal Function
+void sem_signal(int semid) {
+	struct sembuf sbuf;							
+	sbuf.sem_num = 0;							
+	sbuf.sem_op = 1;						
+	sbuf.sem_flg = 0;						
+	if (semop(semid, &sbuf, 1) == -1) {
+			exit(1);
+	}
+	return;
+}
+@
+
+1.4
+log
+@Add PCB selection routine
+@
+text
+@d17 1
+a17 1
+#define CHILD_COUNT 18							// Number of spawned children
+d84 1
+a84 1
+	for (i = 0; i < CHILD_COUNT; i++) {
+d112 28
+d150 1
+a150 1
+	int pcb_taken[18];							// "PCB taken by PID" array/bit vector
+d153 3
+a155 1
+	int pcb_index;								// Relative search position for available PCB
+d191 2
+a192 3
+	int i;
+	for (i = 0; i < CHILD_COUNT; pcb_taken[i++] = 0);
+	for (i = 0; i < CHILD_COUNT; i++) if (DEBUGM) printf("oss: pcb_taken[%d] = %d\n", i, pcb_taken[i]);
+d201 2
+a202 2
+	// Initialize the semaphore
+	if (semctl(semid_oss, 0, SETVAL, 1) == -1) {
+d219 1
+d224 5
+a228 1
+		// WE NEED A WAY TO DEALLOCATE PCB's, OR ELSE WE WILL GET STUCK IN THE BELOW FOR LOOP
+d230 2
+a231 14
+		// Determine which PCB to use by fork'd child
+		for (child_num = pcb_index; child_num <= CHILD_COUNT; child_num++) {
+			// See if we have reached the end of the bit vector. If so, loop back to the beginning
+			if ( child_num == CHILD_COUNT ) {
+				pcb_index = 0;
+				if (DEBUGM) printf("oss: Reached end of PCB bit vector - looping around\n");
+				continue;
+			}
+			if ( ! pcb_taken[child_num] ) {
+				if (DEBUGM) printf("oss: Setting child PCB %d to 'allocated'\n", child_num);
+				pcb_child[child_num] = 1;
+				pcb_index = child_num;
+				break;
+			}
+a232 1
+		if (DEBUGM) printf("oss: Selected child number %d to fork\n", child_num);
+d234 2
+a235 2
+		// Initialize the PCB for this child process and set the bit flag to used
+		init_pcb(child_num);
+d237 19
+d257 3
+a259 13
+		if ((child_pid[child_num] = fork()) < 0) {
+			sprintf(msgerr, "oss: fork() for child %02d", child_num);
+			perror(msgerr);
+			cleanup(SIGINT);
+			exit(1);
+		} else {
+			if (child_pid[child_num] == 0) {
+				// exec child
+				sprintf(child_arg, "%02d", child_num);
+				execl("./userproc", "userproc", child_arg, (char *)NULL);
+	
+				// Handle execl() error, if one occurs
+				sprintf(msgerr, "oss: exec child %02d after fork", child_num);
+d261 16
+d278 1
+a278 2
+				// This is the parent; write to oss log about fork()
+				sprintf(msgerr, "Forked process ID %d for child %02d", child_pid[child_num], child_num);
+d283 14
+d306 1
+a306 1
+		sleep_secs = rand() % 3;				// Random from 0 to 2, average of 1
+d328 1
+a328 1
+d331 3
+@
+
+
+1.3
+log
+@Added semaphore allocation/initialization/cleanup
+@
+text
+@d9 1
+d16 1
+a16 1
+#define DEBUGM 0								// Enable debugging = 1
+d27 1
+d99 2
+a100 2
+		sprintf(mon_err, "oss: cleanup->semctl");
+		perror(mon_err);
+d125 1
+d163 1
+d190 22
+a211 3
+		// Advance the clock
+		ipcd->clock_sec++;
+		ipcd->clock_nano = 1 + (rand() % 1000);	//  Random 1 to 1000
+d213 2
+a214 2
+		// Fork and exec children
+		//for (child_num = 0; child_num < CHILD_COUNT; child_num++) {
+a215 2
+		// Determine which child to fork
+		child_num = 0;
+d217 13
+a229 7
+			// Initialize the PCB for this child process and set the bit flag to used
+			init_pcb(child_num);
+			pcb_taken[child_num] = 1;
+
+
+			if ((child_pid[child_num] = fork()) < 0) {
+				sprintf(msgerr, "oss: fork() for child %02d", child_num);
+a230 2
+				cleanup(SIGINT);
+				exit(1);
+d232 3
+a234 13
+				if (child_pid[child_num] == 0) {
+					// exec child
+					sprintf(child_arg, "%02d", child_num);
+					execl("./userproc", "userproc", child_arg, (char *)NULL);
+		
+					// Handle execl() error, if one occurs
+					sprintf(msgerr, "oss: exec child %02d after fork", child_num);
+					perror(msgerr);
+				} else {
+					// This is the parent; write to oss log about fork()
+					sprintf(msgerr, "Forked process ID %d for child %02d", child_pid[child_num], child_num);
+					writelog(msgerr);
+				}
+d236 5
+a240 1
+		//}
+d242 3
+d247 1
+a247 1
+		sleep_secs = rand() % 2;				// Random from 0 to 1
+d269 1
+a269 1
+d272 3
+@
+
+
+1.2
+log
+@Add shared memory allocation and access
+Add logical and PCB initialization routines
+Add clock advancement commands
+Update random sleep time (0 to 1 seconds)
+@
+text
+@d5 1
+d9 1
+d11 2
+a12 2
+#include <sys/ipc.h>							// Inter-process communication
+#include "ipcd_data.h"							// IPC Data structure
+d39 2
+a40 4
+	if (signum) {
+		if (signum == 2) {
+			fprintf(stderr, "oss: Caught CTRL-C (SIGINT)\n");
+		}
+d95 6
+d106 4
+a109 4
+	ipcd->child_pcb[child]->total_cpu = 0;
+	ipcd->child_pcb[child]->total_sys = 0;
+	ipcd->child_pcb[child]->time_last = 0;
+	ipcd->child_pcb[child]->cpriority = 0;
+d122 1
+d157 18
+d194 1
+d216 1
+a216 1
+					// This is the parent; write to oss log about fork() and update the pcb_taken array
+d247 1
+a247 1
+// $Date: 2015/03/14 20:59:10 $
+d250 6
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d15 1
+d23 1
+d29 1
+a29 1
+void sigcheck(int sig) {
+d34 3
+a36 3
+int sigproc() {
+	signal(SIGINT, sigcheck);
+	signal(SIGTERM, sigcheck);
+d39 1
+a39 1
+			fprintf(stderr, "oss: Caught CTRL-C\n");
+d98 8
+d107 2
+d114 40
+a153 1
+	int pcb_taken[18];							// "PCB taken by PID" array 
+d158 18
+a175 3
+		// Fork and exec childs
+		for (child_num = 0; child_num < CHILD_COUNT; child_num++) {
+			if ((child_pid[c] = fork()) < 0) {
+d184 1
+a184 1
+					execl("./child", "child", child_arg, (char *)NULL);
+d190 1
+a190 1
+					// Log to oss log about fork()
+d195 1
+a195 1
+		}
+d199 1
+a199 2
+		srand(time(NULL));							// Seed the random number generator
+		sleep_secs = 1 + (rand()) % 5;				// Random from 1 to 5
+d205 9
+d220 7
+a226 4
+// $Author:  $
+// $Date:  $
+// $RCSfile:  $
+// $Log:  $
+@

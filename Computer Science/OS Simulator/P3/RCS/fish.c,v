@@ -1,0 +1,394 @@
+head	1.10;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.10
+date	2015.09.30.07.14.33;	author o-cho;	state Exp;
+branches;
+next	1.9;
+
+1.9
+date	2015.09.30.07.05.01;	author o-cho;	state Exp;
+branches;
+next	1.8;
+
+1.8
+date	2015.09.30.06.00.39;	author o-cho;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2015.09.29.05.00.28;	author o-cho;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2015.09.28.11.26.41;	author o-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2015.09.27.23.29.41;	author o-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2015.09.25.19.43.28;	author o-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2015.09.25.05.10.55;	author o-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2015.09.23.21.51.15;	author o-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2015.09.23.21.46.24;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@fish.c
+@
+
+
+1.10
+log
+@*** empty log message ***
+@
+text
+@#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <unistd.h>
+#include <time.h>
+#include "swim_mill.h"
+
+struct Data data[20];
+
+void main() {	
+	int j,  fishORpellet = 1;
+	double delay = 0, timer = 0;
+	key_t ShmKEY= 5678, ShmKEY2 = 7890;
+	
+	// Get shared memory segment identifier
+    int ShmID = shmget(ShmKEY, sizeof(int[23][23]), 0666);
+	int ShmID2 = shmget(ShmKEY2, sizeof(struct Memory), 0666);
+	if (ShmID == -1 ||ShmID2 == -1) {
+		perror("Failed to create shared memory segment");
+		exit(2);
+	}
+	char (*ShmPTR)[23] = shmat(ShmID, NULL, 0);
+	struct Memory *ShmPTR2 = shmat(ShmID2, NULL, 0);
+	if ((int *)ShmPTR  ==  (int *)-1 || (int *)ShmPTR2 == (int *)-1) {
+		perror("Failed to attach shared memory segment");
+		shmctl(ShmID, IPC_RMID,  0);
+		shmctl(ShmID2, IPC_RMID,  0);
+		exit(2);
+	}
+	
+	// Initializing
+	ShmPTR2->fishX=11;
+	ShmPTR2->n++;
+	ShmPTR2->nTotal++;
+	ShmPTR2->flag[0] = 1;
+	ShmPTR2->empty[0] = 0;
+	
+	ShmPTR[22][ShmPTR2->fishX] = 'P';
+	display(ShmPTR);		
+	for (j=0; j<20; j++) {			
+		data[j].empty = 0;
+		data[j].totalDist = 0;
+		data[j].pelletX = 0;
+	}
+
+	j = 0;
+	while (ShmPTR2->status == -1);
+	int time = 0;
+	while (time < 400 || ShmPTR2->nTotal > 1) {
+		process(ShmPTR, ShmPTR2,  0, fishORpellet);
+		usleep(1000000/20);
+		time++;
+	}
+	
+	shmdt((void *) ShmPTR);
+	shmdt((void *) ShmPTR2);
+	exit (2) ;
+}
+@
+
+
+1.9
+log
+@Enlarge the board
+@
+text
+@d8 1
+@
+
+
+1.8
+log
+@Solve the dead lock problem
+@
+text
+@a6 1
+#include <time.h>
+a12 2
+	clock_t start_t, end_t, total_t;
+	start_t = clock();
+d18 1
+a18 1
+    int ShmID = shmget(ShmKEY, sizeof(int[11][11]), 0666);
+d24 1
+a24 1
+	char (*ShmPTR)[11] = shmat(ShmID, NULL, 0);
+d32 1
+d34 1
+a34 1
+	ShmPTR2->fishX=5;
+d40 1
+a40 1
+	ShmPTR[10][ShmPTR2->fishX] = 'P';
+d51 1
+a51 1
+	while (time < 150 || ShmPTR2->nTotal > 1) {
+d53 1
+a53 1
+		usleep(1000000/6);
+a55 1
+	
+@
+
+
+1.7
+log
+@final
+@
+text
+@a7 1
+#include <signal.h>
+a11 7
+int usr_interrupt;
+
+void sig_handler(int signo) {
+  if (signo == SIGINT)
+    fprintf(stderr,"Fish: Dying because of the inturrupt\n");
+	usr_interrupt=1;
+}
+d14 4
+a17 4
+	signal(SIGINT, sig_handler);
+	clock_t t,it,rt;
+	t = clock();
+	int j,  fishORpellet = 1, wait = 0;
+d37 2
+d40 2
+a51 1
+	
+d53 1
+a53 1
+	do {
+d55 1
+a55 1
+		sleep(1); 
+d57 1
+a57 1
+	} while (time < 40); 
+@
+
+
+1.6
+log
+@Added solution 4 cretical section
+@
+text
+@a7 1
+#include "swim_mill.h"
+d10 1
+a10 1
+
+d17 1
+a17 1
+    fprintf(stderr,"\nDying because of the inturrupt\n");
+d21 1
+a21 1
+void main() {
+d25 1
+a25 1
+	int j, fishX = 5, fishORpellet = 1, wait = 0;
+d44 1
+d46 1
+a46 1
+	ShmPTR[10][fishX] = 'P';
+d57 1
+d59 5
+a63 6
+		critical_section_fish (ShmPTR, ShmPTR2);
+		// process(ShmPTR, ShmPTR2,  0, fishORpellet);
+		sleep(1*500); 
+		rt = clock() - t;
+	} while (((float)rt) / CLOCKS_PER_SEC < 5 && ShmPTR2->status != 2 ); // TODO fix the clock
+
+@
+
+
+1.5
+log
+@Added process funtion
+Big optimization for loop iteration
+@
+text
+@d9 12
+d23 1
+d26 1
+a26 2
+	int j, fishX = 5;
+	struct Data data[20];
+d44 1
+a45 3
+	// printf("My stats %d", ShmPTR2->flag[0]);
+	
+	// Initializing the position
+a47 1
+
+d53 1
+a53 1
+	int x;
+d55 1
+a55 14
+	process(ShmPTR2, 0);
+	
+	// while (ShmPTR2->status == -1);
+	// do {
+		// if(ShmPTR2->status == 0) { // New pellet dictected
+			// x = findPellet(ShmPTR, data);		// Find the cloest
+			// updatePos(ShmPTR, x);	//  Change the position
+			// ShmPTR2->status = 2;		// Change the status
+		// } else if(ShmPTR2->status == 2) {
+			// updatePos(ShmPTR, x, ShmPTR2);
+			// ShmPTR2->status == 2;
+		// }
+		// rt = clock() - t;
+	// } while (((float)rt) / CLOCKS_PER_SEC < 5);
+d57 7
+@
+
+
+1.4
+log
+@Tested sharing the distance values between proceeses
+@
+text
+@d7 1
+d10 6
+a15 6
+void main () {
+	int rows = 11, cols = 11, x, y, k = 0;
+	int ShmID, ShmID2;
+	key_t ShmKEY, ShmKEY2;
+	ShmKEY = 5678;
+	ShmKEY2 = 6789;
+a16 1
+	// printf("fish(%d): I am fish\n", getpid());
+d18 3
+a20 2
+	ShmID = shmget (ShmKEY,  sizeof(int[rows][cols]), 0666);
+	if (ShmID == -1)  {
+d22 1
+a22 1
+		exit (2);
+d24 3
+a26 3
+
+	char (*ShmPTR)[11] =  shmat(ShmID, NULL, 0);
+	if ((int) ShmPTR  == -1) {
+d28 6
+a33 4
+		shmctl(ShmID, IPC_RMID, 0);
+		exit (2);
+		}
+	// printf("fish(%d): Attached the shared memory\n", getpid());
+d35 8
+a42 11
+	// Get shared memory segment identifier
+    ShmID2 = shmget(ShmKEY2, 20*sizeof(int), 0666);
+	if (ShmID2 == -1) {
+		perror("Failed to create shared memory segment");
+		exit (2);
+	}
+	int *ShmPTR2=  (int*)shmat(ShmID2, NULL, 0);
+	if ((int) ShmPTR2  == -1) {
+      perror("Failed to attach shared memory segment");
+	  shmctl(ShmID2, IPC_RMID,  0);
+		exit (2);
+d44 17
+a61 5
+
+   // Initializing the position
+	fishPos(ShmPTR);
+	sleep (6);
+	calcDist(ShmPTR2);
+a63 1
+	// printf("fish(%d): Detached the shared memory\n", getpid());
+d65 1
+a65 1
+}@
+
+
+1.3
+log
+@Added another shared memory to store the pellet's coordicate
+@
+text
+@d48 1
+a48 1
+	sleep (7);
+@
+
+
+1.2
+log
+@added shared memory management
+tested displaying initial position
+@
+text
+@d11 2
+a12 2
+	int ShmID;
+	key_t ShmKEY;
+d14 1
+a14 1
+	int iniposX = 5, iniposY = 10;
+d31 15
+a45 1
+   
+d47 3
+a49 4
+	ShmPTR[iniposY][iniposX] = 'P';
+	system("clear");
+	display(ShmPTR);	
+	sleep (3);
+d51 1
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 40
+@

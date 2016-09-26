@@ -1,0 +1,38 @@
+head	1.1;
+access;
+symbols;
+locks
+	o2-cho:1.1; strict;
+comment	@ * @;
+
+
+1.1
+date	2016.04.19.17.52.39;	author o2-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@Initial skeleton program
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@// RCS DATA AT BOTTOM OF FILE
+
+#define _WL_INCLD
+
+void writelog(char *msg, char *procname);
+
+
+
+// RCS information:
+// $Author:  $
+// $Date:  $
+// $RCSfile:  $
+// $Log:  $
+@

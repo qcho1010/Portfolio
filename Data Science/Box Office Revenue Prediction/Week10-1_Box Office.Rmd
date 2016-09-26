@@ -1,0 +1,189 @@
+---
+title: "Week10 PREDICTING BOX OFFICE REVENUE"
+author: "Kyu Cho"
+date: "August 19, 2015"
+output: html_document
+---
+# Introduction
+Each year, box offices at movie theaters collect billions of dollars in revenue in the United States alone.  In this problem, we seek to determine whether or not we can predict box office revenue based on different variables related to a movie.  
+
+
+# Variables
+In this problem, we'll use a dataset of 334 movies that were produced from 1953 to 2015.  The dataset Movies.csv includes the following 24 variables:
+
+ - Name = the name of the movie
+ - Year = the year the movie was produced
+ - Rated = the rating given to the movie by the MPAA
+ - Runtime = the duration of the movie in minutes
+ - Action = binary variable that takes value 1 if the movie is an action movie, 0 otherwise
+ - Adventure, Crime, Drama, Thriller, Fantasy, Horror, Sci.Fi, Comedy, Family, Mystery, Romance, Animation, Music, History, Documentary are all defined like Action
+ - Wins = number of awards won by the movie
+ - Nominations = number of awards the movie was nominated for 
+ - Production.Budget = the natural logarithm of the production budget in dollars
+ - Worldwide = the natural logarithm of the worldwide revenue in dollars
+
+## PROBLEM 1 - LOADING THE DATA  
+```{r cahce=TRUE}
+library(caTools)
+setwd("D:/Google Drive/College/4-The Analytics Edge/data10")
+Movies = read.csv('Movies.csv')
+str(Movies)
+```
+
+Create a training set that consists of movies released before 2010 and a testing set that consists of movies released in 2010 and after.
+```{r cache=T}
+train = subset(Movies, Year < 2010)
+test = subset(Movies, Year >= 2010)
+```
+
+## PROBLEM 2 - METHOD OF SPLITTING THE DATA
+Q : In this class, we have frequently used the sample.split function to randomly split our data. Why do we use a different approach here? Check all that apply.
+A : The sample.split function is typically used to split data with a categorical dependent variable, and we have a continuous dependent variable. Also, We don't want to randomly split our data here, so the sample.split function is not appropriate.  
+
+## PROBLEM 3 - A LINEAR REGRESSION MODE
+In your linear regression model, which of the independent variables are significant at the p=0.05 level (at least one star)? For factor variables, consider the variable significant if at least one level is significant. Select all that apply.
+
+```{r cache=T}
+model.LM = lm(Worldwide~.-Name-Year, data=train)
+summary(model.LM)
+```
+
+## PROBLEM 4 - CHECKING FOR SIGNIFICANCE
+In your linear regression model, which of the independent variables are significant at the p=0.05 level (at least one star)? For factor variables, consider the variable significant if at least one level is significant. Select all that apply.
+```{r cache=T}
+# extract p-factors
+model.summary = summary(Model.LM)$coefficients
+
+#independent variables significant at the p=0.05 level
+sort(model.summary[,4]<0.05)
+
+barplot(sort(model.summary[model.summary[,4]<0.05, 4]), main="independent variables Pr(>|t|) <0.05")
+```
+
+## PROBLEM 5 - CORRELATIONS  
+What is the correlation between Worldwide and Production.Budget in the training set?
+```{r cache=T}
+cor(train$Worldwide, train$Production.Budget)
+```
+Q : Given this value, should Production.Budget be included in the model?
+A : Yes, it has high predictive value since the independent variable is correlated with a dependent variable
+
+## PROBLEM 6 - AN UPDATED MODEL
+Create a new linear regression model on the training set with only the significant variables you found in Problem 4 as the independent variables. Going forward, we will only consider this linear regression model.  
+
+What is the model's R-squared? (Please report the "Multiple R-squared" value in the output.)
+```{r cache=T}
+model.LM2 = lm(Worldwide~Runtime+Crime+Horror+Animation+History+Nominations+Production.Budget, data=train)
+summary(model.LM2)
+```
+
+## PROBLEM 7 - UNDERSTANDING COEFFICIENTS  
+In the model from Problem 6, what is the coefficient for Animation in the linear regression?  
+```{r cache=T}
+model.LM2$coefficients
+```
+Q : The coefficient for Runtime is 0.010095. What is the interpretation of this coefficient?
+A : For an additional minute of Runtime, the prediction for the variable Worldwide increases by approximately 0.01 units
+
+## PROBLEM 8 - PREDICTIONS ON THE TEST SET  
+Make predictions on the test set using your linear regression model. What is the Sum of Squared Errors (SSE) on the test set?  
+```{r cache=T}
+pred.LM2 = predict(model.LM2, newdata = test)
+
+# SSE
+SSE = sum((pred.LM2 - test$Worldwide)^2)
+
+#the Total Sum of Squares (SST) on the test set
+SST = sum((mean(test$Worldwide) - test$Worldwide)^2)
+
+#R-squared on the test set
+Rsquared = 1-SSE/SST
+
+print(paste("SSE=", SSE, "SST=", SST, "Rsquared=", Rsquared))
+
+#plot the predicted Worldwide value vs the actual value
+plot(pred.LM2, test$Worldwide, main="Predicted vs actual Worldwide value")
+```
+
+## PROBLEM 9 - UNDERSTANDING THE MODEL
+Q : True or False: Our linear regression model suffers from overfitting.
+A : False. The R-squared value on the test set is higher than on the training set, so there is no overfitting going on here.
+
+## PROBLEM 10 - A CLASSIFICATION PROBLEM  
+Let's turn this problem into a multi-class classification problem by creating a new dependent variable. Our new dependent variable will take three different values: "Excellent", "Average", and "Poor" for films with Worldwide revenue in the top quartile, middle 50%, and bottom quartile, respectively. Create this variable, called "Performance", in your dataset Movies by running the following line in your R console:
+
+Movies$Performance = factor(ifelse(Movies$Worldwide > quantile(Movies$Worldwide, .75), "Excellent", ifelse(Movies$Worldwide > quantile(Movies$Worldwide, .25), "Average", "Poor")))
+```{r cache=T}
+Movies$Performance = factor(ifelse(Movies$Worldwide > quantile(Movies$Worldwide, .75), "Excellent", ifelse(Movies$Worldwide > quantile(Movies$Worldwide, .25), "Average", "Poor")))
+table(Movies$Performance)
+```
+Now, remove the original dependent variable "Worldwide" from your dataset with the command:
+Movies$Worldwide = NULL
+```{r cache=T}
+Movies$Worldwide = NULL
+```
+Then, randomly split Movies into a training set, containing 70% of the observations, and a testing set, containing 30% of the observations. This time, you should use the sample.split function with the dependent variable "Performance". Right before calling the sample.split function, set the seed to 15071.  
+```{r cache=T}
+library(caTools)
+set.seed(15071)
+split = sample.split(Movies$Performance, SplitRatio=0.7)
+table(split)
+train = Movies[split==TRUE,]
+test = Movies[split==FALSE,]
+```
+
+## PROBLEM 11 - A CART MODEL
+Build a CART model to predict "Performance" using all of the other variables except for "Name and "Year" to build the model.  
+(Unless you have re-ordered your columns, an easy way to do this is to send MoviesTrain[ , 3:ncol(MoviesTrain)] as the data argument, assuming your new training set is called "MoviesTrain.")  
+Remember that to predict a multi-class dependent variable, you can use the rpart function in the same way as for a binary classification problem. Just use the default parameter settings (don't set a value for minbucket or cp).
+
+```{r cache=T}
+library(rpart)
+library(rpart.plot)
+model.CART = rpart(Performance ~ ., data=train[ , 3:ncol(train)] )
+prp(model.CART)
+```
+Q : The CART model you just built predicts only two possible outcomes for a movie with Production.Budget less than 18. Which outcome does it never predict for these low-budget films?  
+A : Excellent
+
+## PROBLEM 12 - TRAINING SET ACCURACY  
+Make predictions on the training set, and then create a confusion matrix. What is the overall accuracy of the model?
+```{r cache=T}
+pred.CART = predict(model.CART, newdata=train, type="class")
+tbl.CART = table(train$Performance, pred.CART)
+tbl.CART
+accuracy.CART = (96+41+46)/sum(tbl.CART)
+accuracy.CART
+```
+
+## PROBLEM 13 - A BASELINE MODEL
+What is the accuracy on the training set of a baseline model that predicts the most frequent outcome (Average) for all observations?
+```{r cache=T}
+tbl.base = table(train$Performance)
+tbl.base
+accuracy.base =  116/sum(tbl.base)
+accuracy.base
+```
+
+## PROBLEM 14 - TESTING SET ACCURACY
+Make predictions on the testing set, and then create a confusion matrix. What is the overall accuracy of the model on the testing set?
+```{r cache=T}
+pred2.CART = predict(model.CART, newdata=test, type="class")
+tbl2.CART = table(test$Performance, pred2.CART)
+tbl2.CART
+accuracy2.CART = (36+16+16)/sum(tbl2.CART)
+accuracy2.CART
+```
+
+## PROBLEM 15 - BASELINE ACCURACY ON TESTING SET
+What is the accuracy on the testing set of a baseline model that predicts the most frequent outcome (Average) for all observations?
+```{r cache=T}
+tbl2.base = table(test$Performance)
+tbl2.base
+accuracy2.base =  (50)/sum(tbl2.base)
+accuracy2.base
+```
+
+## PROBLEM 16 - UNDERSTANDING THE MODEL
+Q : What can you conclude from the CART model?  
+A : Both the linear regression and CART models are well-suited for this prediction problem.

@@ -1,0 +1,135 @@
+---
+title: "Week2-2"
+author: "Kyu Cho"
+date: "Tuesday, June 16, 2015"
+output: html_document
+---
+# Moneyball
+```{r cache=TRUE}
+setwd("D:/Google Drive/College/4-The Analytics Edge/data2")
+baseball <- read.csv("baseball.csv")
+str(baseball)
+```
+
+```{r cache=TRUE}
+moneyball = subset(baseball, Year < 2002)
+str(moneyball)
+```
+
+Now confirm the claim made in Moneyball that a team needs to score at least 135 more runs than they allow to win at least 95 games.
+
+```{r cache=TRUE}
+plot(moneyball$W, moneyball$Playoffs)
+t = table(moneyball$W > 95, moneyball$Playoffs)
+# Accuracy
+(t[1,1]+t[2,2])/sum(t)
+
+# Build a linear regression equation to predict wins using the difference between runs scored and runs allowed.
+moneyball$RD = moneyball$RS - moneyball$RA
+str(moneyball)
+
+plot(moneyball$RD, moneyball$W)
+WinsReg = lm(W ~ RD, data = moneyball)
+summary(WinsReg)
+```
+You can see the strong correlation between RD and W up to .88
+
+We get the linear regression model.  
+Wins = Intercept term + coefficients RD * RD  
+W = 80.8814 + 0.1058(RD)  
+W >= 95  
+80.8814 + 0.1058(RD) >= 95  
+RD >= (95-80.8814)/.1058  = 133.4  
+
+This tells us that if the run difference of a team is greater than or equal to 133.4, then we predict that the team will win at least 95 games.  
+
+
+Q: If a baseball team scores 713 runs and allows 614 runs, how many games do we expect the team to win?  
+
+```{r}
+RD2 = 713-614
+W2 = 80.8814 + .1058*RD2
+W2
+```
+
+Now
+1. Find how many runs a team will score by using batting statistics.
+2. Fine how many runs a team will allow by using fielding and pitching statistic.
+
+ - OBP : On-Base percentage
+ - SLG : Slugging percentage
+ - BA : Batting Avg.
+ 
+## Scoring Runs by using batting statistics 
+```{r cache=TRUE}
+RunsReg = lm(RS ~ OBP + SLG + BA, data = moneyball)
+summary(RunsReg)
+```
+
+As you see, the coefficients for Batting average is actually negative, which implies that a team with a lower batting average will score more runs, which is non-sense. Let's investigate more indepth by removing BA variable.
+```{r cache=TRUE}
+RunsReg2 = lm(RS ~ OBP + SLG, data = moneyball)
+summary(RunsReg2)
+```
+It looks no difference between the previous model, in fact, it looks more simplier
+
+Thus, we confirmed that Batting Average is overvalued and On-Base percentage is the most important and Slugging Percentage is the second most important by using Linear Regression model.
+
+We get the linear regression model.  
+Runs Scored = Intercept term + coeff. OBP * (OBP) + coeff. SLG * (SLG)  
+RS = -804.63 + 2737.77(OBP) + 1584.91(SLG)  
+
+**Q: If a baseball team's OBP is 0.311 and SLG is 0.405, how many runs do we expect the team to score?**
+```{r cache=TRUE}
+RS = -804.63 + 2737.77*.311 + 1584.91*.405
+RS
+```
+
+
+## Allowing Runs by using pitching statistic
+ - OOBP : Opponents On-Base Percentage
+ - OSLG : Opponents Slugging Percentage
+ 
+```{r cache=TRUE}
+PitchReg = lm(RA ~ OOBP + OSLG, data = moneyball)
+summary(PitchReg)
+```
+We get the linear regression model.   
+Runs Allowed = Intercept term + coeff. OOBP * OOBP + coeff. OSLG * OSLG  
+RA = -837.38 + 2913.60(OOBP) + 1514.29(OSLG)  
+
+R^2 = .91 and both variables are significants
+
+**Q: If a baseball team's opponents OBP (OOBP) is 0.297 and oppenents SLG (OSLG) is 0.370, how many runs do we expect the team to allow?**
+```{r cache=TRUE}
+RA = -837.38 + 2913.60*0.297 + 1514.29*0.370
+RA
+```
+ 
+Now use our previous formula to predict the wins  
+Wins = Intercept term + coefficients RD * RD  
+W = 80.8814 + 0.1058(RD)  
+RD = (RS - RA)  
+```{r cache=TRUE}
+RD = RS - RA
+W = 80.8814 + 0.1058 * RD
+W
+```
+It predicts that we will win 92 games.
+
+**Problem**  
+Need a team that make it to the play off.  
+**Objective**  
+Build the model that calculates whether or not the win will make it to the play off.  
+**Actual Method Used**  
+Linear regression model.  
+**Procedure**  
+1.	Fine the number of win to make to the play off  
+-	Use the general statistic method to find, (95 wins is required with accuracy of 90% of chance)  
+2.	Build the model that calculates the RD(RS - RA) values to make 95 wins.  
+3.	Build the model that calculates the RS based on the player's stats. (OBP, SLG)  
+4.	Build the model that calculates the RA based on the opponent's stats (OOBP, OSLG)  
+**Facts Discovered**  
+95 games is needed to win.  
+133 run difference to make 95 games.  
+OBP, SLG variables helps to found the run difference.  

@@ -1,0 +1,11 @@
+base
+knitr
+dplyr
+ggplot2
+lubridate
+maps
+ggmap
+lattice
+car
+mosaicData
+mosaic

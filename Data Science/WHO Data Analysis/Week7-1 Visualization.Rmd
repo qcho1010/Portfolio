@@ -1,0 +1,93 @@
+---
+title: "Week7-1 WHO"
+author: "Kyu Cho"
+date: "July 14, 2015"
+output: html_document
+---
+
+```{r cache=TRUE}
+library(ggplot2)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data7")
+
+WHO = read.csv("WHO.csv")
+summary(WHO)
+str(WHO)
+```
+
+
+```{r cache=TRUE}
+
+# Create the ggplot object with the data and the aesthetic mapping:
+scatterplot = ggplot(WHO, aes(x=GNI, y=FertilityRate))
+
+
+# Make a line graph instead:
+scatterplot + 
+    geom_line()
+
+# Another option:
+scatterplot + 
+    geom_point(color="darkred", size=3, shape=8) 
+
+# Add a title to the plot:
+scatterplot + 
+    geom_point(colour="blue", size=3, shape=17) + 
+    ggtitle("Fertility Rate vs. Gross National Income")
+
+# Save our plot:
+fertilityGNIplot = scatterplot +
+    geom_point(colour = "blue", size=3, shape=17) +
+    ggtitle("Fertility Rate vs. Gross National Income")
+
+pdf("MyPlot.pdf")
+print(fertilityGNIplot)
+dev.off()
+```
+
+```{r cache=TRUE}
+ggplot(WHO, aes(x=GNI, y=FertilityRate, color=Region)) + 
+    geom_point()
+
+ggplot(WHO, aes(x=GNI, y=FertilityRate, color=LifeExpectancy)) + 
+    geom_point()
+
+ggplot(WHO, aes(x=FertilityRate, y=Under15)) + 
+    geom_point()
+```
+Not a linear relationship. But we suspect that a log transformation of FertilityRate will be better.
+
+```{r cache=TRUE}
+ggplot(WHO, aes(x=log(FertilityRate), y=Under15)) + 
+    geom_point()
+mod = lm(Under15 ~ log(FertilityRate), data = WHO)
+summary(mod)
+```
+Visualization was a great way for us to realize that the log transformation would be better.
+Without log, we would've gottn 0.87 instead of 0.9391 for R^2.  
+```{r cache=TRUE}
+# Add this regression line to our plot:
+ggplot(WHO, aes(x = log(FertilityRate), y = Under15)) + 
+    geom_point() + 
+    stat_smooth(method = "lm")
+
+
+# 99% confidence interval
+ggplot(WHO, aes(x = log(FertilityRate), y = Under15)) + 
+    geom_point() + 
+    stat_smooth(method = "lm", level = 0.99)
+
+# Change the color of the regression line:
+ggplot(WHO, aes(x = log(FertilityRate), y = Under15)) + 
+    geom_point() + 
+    stat_smooth(method = "lm", colour = "orange")
+
+# No confidence interval in the plot
+ggplot(WHO, aes(x = log(FertilityRate), y = Under15)) + 
+    geom_point() + 
+    stat_smooth(method = "lm", se = FALSE)
+
+ggplot(WHO, aes(x=FertilityRate, y=Under15, color=Region)) + 
+    geom_point()
+```
+Most of the countries in Europe have a very low fertility rate and a very low percentage of the population under 15.

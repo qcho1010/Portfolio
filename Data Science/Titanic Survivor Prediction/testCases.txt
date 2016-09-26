@@ -1,0 +1,222 @@
+2)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8040541 0.9076577 0.8367117 0.893018 0.8344595 0.8862613 0.9121622 0.7894144 0.7657658
+[1] 0.8477227
+
+3) @
+
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7894144 0.9234234 0.8209459 0.8952703 0.8153153 0.8963964 0.911036 0.8626126 0.8378378
+[1] 0.8613614
+
+4)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.6644144 0.7792793 0.6768018 0.7072072 0.6396396 0.7038288 0.7488739 0.7578829 0.704955
+[1] 0.7092092
+
+
+5)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8108108 0.8986486 0.8310811 0.8907658 0.8344595 0.8806306 0.9054054 0.7815315 0.7646396
+[1] 0.8442192
+
+
+6)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8254505 0.9031532 0.838964 0.8907658 0.8434685 0.8885135 0.9087838 0.795045 0.7725225
+[1] 0.8518519
+
+7)@
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8277027 0.9076577 0.838964 0.8885135 0.8423423 0.9054054 0.9087838 0.8040541 0.7713964
+[1] 0.85498
+																					
+8)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8254505 0.9099099 0.8400901 0.8918919 0.8310811 0.8851351 0.9076577 0.7759009 0.7747748
+[1] 0.8490991
+
+9)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8322072 0.893018 0.8423423 0.8963964 0.8378378 0.8716216 0.8941441 0.7927928 0.7984234
+[1] 0.850976
+
+10)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7905405 0.9054054 0.8322072 0.8963964 0.829955 0.8592342 0.8975225 0.8018018 0.8468468
+[1] 0.8511011
+
+11)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8310811 0.8806306 0.8355856 0.8907658 0.8378378 0.865991 0.9042793 0.795045 0.7882883
+[1] 0.8477227
+
+12)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.829955 0.8918919 0.829955 0.8896396 0.8333333 0.8682432 0.9054054 0.7961712 0.7747748
+[1] 0.8465966
+
+13)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8344595 0.8828829 0.8367117 0.8885135 0.8322072 0.8738739 0.9065315 0.7646396 0.8130631
+[1] 0.8480981
+
+14)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7939189 0.911036 0.8074324 0.8828829 0.8096847 0.8761261 0.9132883 0.8130631 0.8288288
+[1] 0.8484735
+
+15)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8344595 0.865991 0.8355856 0.8907658 0.8344595 0.8524775 0.8975225 0.7927928 0.7894144
+[1] 0.8437187
+
+16)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8367117 0.8862613 0.8355856 0.8907658 0.8344595 0.8682432 0.9031532 0.7871622 0.7905405
+[1] 0.8480981
+
+17)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8288288 0.8783784 0.8378378 0.8885135 0.8378378 0.8761261 0.9076577 0.7612613 0.8074324
+[1] 0.8470971
+
+18)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7871622 0.9042793 0.7759009 0.8693694 0.7804054 0.8468468 0.9054054 0.7939189 0.8378378
+[1] 0.8334585
+
+19)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7871622 0.9042793 0.7759009 0.8693694 0.7804054 0.8468468 0.9054054 0.7939189 0.8378378
+[1] 0.8334585
+
+20)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7871622 0.9042793 0.7961712 0.8648649 0.7995495 0.8524775 0.9042793 0.7905405 0.829955
+[1] 0.8365866
+
+21)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7871622 0.9054054 0.8119369 0.8648649 0.8130631 0.8457207 0.9076577 0.7826577 0.8254505
+[1] 0.8382132
+
+22)
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7871622 0.9031532 0.8096847 0.8693694 0.8051802 0.8412162 0.911036 0.7882883 0.8254505
+[1] 0.8378378
+
+23)@ 
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.786036 0.9279279 0.7916667 0.8975225 0.7882883 0.8209459 0.9166667 0.8738739 0.8378378
+[1] 0.848974
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7927928 0.9189189 0.8063063 0.8963964 0.7995495 0.8851351 0.9155405 0.8862613 0.8423423
+[1] 0.8603604
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8198198 0.9166667 0.8063063 0.9245495 0.7995495 0.8918919 0.9189189 0.8907658 0.8445946
+[1] 0.8681181
+
+24)@
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7961712 0.9132883 0.8355856 0.8997748 0.8310811 0.8862613 0.9076577 0.8277027 0.8412162
+[1] 0.8598599
+
+25@
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8310811 0.8851351 0.8423423 0.8795045 0.8502252 0.8975225 0.8907658 0.8108108 0.7961712
+[1] 0.8537287
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.8738739 0.8885135 0.8423423 0.8975225 0.8468468 0.8963964 0.8896396 0.8153153 0.7984234
+[1] 0.860986
+
+26)@
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7882883 0.9234234 0.8029279 0.8952703 0.7972973 0.893018 0.911036 0.8885135     0.8344595
+[1] 0.8593594
+			svm       		rf       		glm       	xgb      		glmn       		bag       	gbm       		knn      			rFrn
+1 0.7882883 0.9222973 0.8063063 0.8975225 0.8051802 0.8873874 0.9121622 0.8896396 0.8355856
+[1] 0.8604855
+
+
+Nz vs noNz (5v6, 11v12, 15v16, 19v21)
+I  : (All) 
+D : (Non)
+	PCA -> noNz  = not effective
+
+noNz vs noNz + noHiCor (6v7, 16v17)
+I  : (rFrn, glm, bag)
+D : (Most)
+
+noPCA vs fitPCA (5v11, 6v12, 7v13)
+I  : (svm knn) (svm knn) (svm rFrn)   (svm knn rFrn)
+D : (rf bag)     (most)      (most)        (most)
+
+noPCA vs fullPCA (5v15,  6v16, 7v17)
+I  : (svm knn rFrn)   (svm rFrn)  (rFrn)
+D : (most)				   (most)        (most)  
+
+fitPCA vs fullPCA (11v15, 12v16, 13v17, 14v20)
+I  : (svm rFrn)    (svm rFrn)   (None)   (None)
+D : (most)  (most)        			 (All)        (All)
+
+noPCA + feat -> fullPCA + feat (3v18)
+I  : (rFrn)
+D : (most)
+
+fitPCA + feat vs fullPCA + feat  (14 v 18)
+I : (rFrn)
+D: (most)
+
+nofeat vs feat (5v3, 9v10, 13v14, 15v18)
+I  : (rf xgb bag gbm knn rFrn)  (rf gbm knn rFrn) 	  (rf bag gbm knn rFrn)  (rf gbm knn rFrn) 			 
+D : (svm glm glmn)				  (svm glm glmn bag)  (svm glm glmn) 			(svm glm xgb glmn bag)  
+
+------------------------------------------------------------------------------------------------------------
+noNZ + noHicor + pca(win) vs pca -> noNZ + noHicor(lose)
+
+cluster *2 (2v5, 18v19)
+	Not effective
+	
+feat * 2 = increase on glm, glmn increase, decrease all
+noNZ + noHicor + pca(win) vs pca -> noNZ + noHicor(lose)
+------------------------------------------------------------------------------------------------------------
+
+bag
+7
+rf, xgb, gbm
+23, 
+rFrn
+24
+glm, glmn, svm
+25
+knn
+26
+
+> max(test.df$bag)
+[1] 0.9042793
+> max(test.df$rf)
+[1] 0.9279279
+> max(test.df$xgb)
+[1] 0.8975225
+> max(test.df$gbm)
+[1] 0.9166667
+> max(test.df$rFrn)
+[1] 0.8412162
+> max(test.df$glm)
+[1] 0.8423423
+> max(test.df$glmn)
+[1] 0.8502252
+> max(test.df$svm)
+[1] 0.8310811
+> max(test.df$knn)
+[1] 0.8885135
+
+Conclustion
+# 7   ragular -> cluster -> noNz -> noHicor 											   0.85498
+# 23 ragular -> cluster -> noNz -> noHicor -> feat -> fullPCA                  0.848974
+# 24 ragular -> cluster -> noNz -> noHicor -> fullPCA -> feat                  0.859859
+# 25 ragular -> cluster -> noNz -> noHicor -> fullPCA                         	  0.853728               
+# 26 ragular -> cluster -> noNz -> noHicor -> feat                             	  0.859359                           
+
+

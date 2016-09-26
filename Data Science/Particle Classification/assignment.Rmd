@@ -1,0 +1,204 @@
+
+---
+title: "Machine Learning Assignment"
+author: "Kyu"
+date: "January 18, 2016"
+output: html_document
+---
+In this assignment, you will be working with data from the SeaFlow environmental flow cytometry instrument.
+
+A flow cytometer delivers a flow of particles through capilliary. By shining lasers of different wavelengths and measuring the absorption and refraction patterns, you can determine how large the particle is and some information about its color and other properties, allowing you to detect it.
+
+The technology was developed for medical applciations, where the particles were potential pathogens in, say, serum, and the goal was to give a diagnosis. But the technology was adapted for use in environmental science to understand microbial population profiles.
+
+The SeaFlow instrument, developed by the Armbrust Lab at the University of Washington, is unique in that it is deployed on research vessels and takes continuous measurements of population profiles in the open ocean.
+
+The scale of the data can be quite large, and is expected to grow significantly: A two-week cruise from one vessel can generate hundreds of gigabytes per day, and the vision is to deploy one of these instruments on not only research vessels but the commercial shipping fleet as well.
+
+While there are a number of challenging analytics tasks associated with this data, a central task is classification of particles. Based on the optical measurements of the particle, it can be identified as one of several populations.
+
+```{r cache=T}
+library(caret)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(e1071)
+library(parallel)
+library(doParallel)
+```
+
+# Understanding Data
+```{r cache=T}
+setwd("E:/Google Drive/College/20-Data Science at Scale/2 - Practical Predictive Analytics_Models and Methods/assignment/data")
+data = read.csv("seaflow_21min.csv")
+
+summary(data)
+str(data)
+```
+
+# Spliting Data
+```{r cache=T}
+set.seed(123)
+trainIndex = createDataPartition(y=data$pop, p=.5,list=FALSE)
+train = data[trainIndex,]
+test = data[-trainIndex,]
+```
+
+# Graph
+```{r cache=T}
+qplot(pe, chl_small, data = data, color = pop)
+```
+
+# Build Rpart Model
+```{r cache=T}
+model_rp = rpart(pop ~ fsc_small + fsc_perp + fsc_big + pe + chl_big + chl_small, method="class", data=train)
+
+# Displaying tree
+print(model_rp)
+rpart.plot(model_rp, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+fancyRpartPlot(model_rp, palettes=c("Greys", "Oranges"))
+```
+
+# Prediction and Evaluation
+```{r cache=T}
+pred_rp = predict(model_rp, test, type='class')
+table(test$pop, pred_rp)
+
+pred_result_rp = pred_rp == test$pop
+sum(pred_result_rp) / length(pred_result_rp)
+
+summary(pred_rp == test$pop)
+30844/(30844+5327)
+
+acc_rp = confusionMatrix(pred_rp, test$pop)$overall['Accuracy']
+acc_rp
+```
+
+# Corss validation
+```{r cache=T}
+# Cross validation
+set.seed(123)
+numFolds = trainControl(method="cv", number=10, repeats=10, allowParallel=TRUE)
+cartGrid = expand.grid(.cp = seq(0.002,0.1,0.002))
+train(pop ~ fsc_small + fsc_perp + fsc_big + pe + chl_big + chl_small, data=train, method="rpart",trControl=numFolds, tuneGrid=cartGrid)
+
+# Build rpart model with cv
+model_rp_cv = rpart(pop ~ fsc_small + fsc_perp + fsc_big + pe + chl_big + chl_small, method="class", data=train, cp=0.002)
+
+# Prediction
+pred_rp_cv = predict(model_rp_cv, test, type="class")
+acc_rp_cv = confusionMatrix(pred_rp_cv, test$pop)$overall['Accuracy']
+acc_rp_cv
+
+# Ploting
+prp(model_rp_cv, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+
+
+
+#####################################################################################################################
+
+
+# Build RandomForest Model
+```{r cache=T}
+model_rf = randomForest(pop ~ fsc_small + fsc_perp + fsc_big + pe + chl_big + chl_small, method="class", data=train)
+
+# Important keys
+varImpPlot(model_rf)
+imp_rf = importance(model_rf)
+sort(imp_rf[,1], decreasing=TRUE)
+```
+
+# Prediction and Evaluation
+```{r cache=T}
+pred_rf = predict(model_rf, test, type='class')
+table(test$pop, pred_rp)
+
+pred_result_rf = pred_rf == test$pop
+sum(pred_result_rf) / length(pred_result_rf)
+
+summary(pred_rf == test$pop)
+33243/(33243+2928)
+
+acc_rf = confusionMatrix(pred_rf, test$pop)$overall['Accuracy']
+acc_rf
+```
+
+# Corss validation
+```{r cache=T}
+# Cross validation
+set.seed(123)
+
+registerDoParallel(makeCluster(detectCores())) 
+controlf = trainControl(method="cv", number=10, repeats=10, allowParallel = TRUE)
+mtryGrid = expand.grid(mtry = 100)
+model_rf_cv = randomForest(pop ~ fsc_small + fsc_perp + fsc_big + pe + chl_big + chl_small, data=train, method="class", trControl = controlf, tuneGrid=mtryGrid)
+
+# Build rpart model with cv
+pred_rf_cv = predict(model_rf_cv, test)
+acc_rf_cv = confusionMatrix(pred_rf_cv, test$pop)$overall['Accuracy']
+acc_rf_cv
+```
+
+
+
+#####################################################################################################################
+
+
+# Build Suport Vector Machine Model
+```{r cache=T}
+model_svm <- svm(pop ~ fsc_small + fsc_perp + fsc_big + pe + chl_big + chl_small, data=train)
+```
+
+# Prediction and Evaluation
+```{r cache=T}
+pred_svm = predict(model_svm, test, type='class')
+table(test$pop, pred_svm)
+
+pred_result_svm = pred_svm == test$pop
+sum(pred_result_svm) / length(pred_result_svm)
+
+summary(pred_svm == test$pop)
+33253/(33253+2918)
+
+acc_svm = confusionMatrix(pred_svm, test$pop)$overall['Accuracy']
+acc_svm
+```
+
+
+
+#####################################################################################################################
+
+
+# Modifying Data set
+```{r cache=1}
+train_cleaned = subset(train, file_id != 208)
+test_cleaned = subset(test, file_id != 208)
+```
+
+
+# Build Suport Vector Machine Model
+```{r cache=T}
+model_svm_2 <- svm(pop ~ fsc_small + fsc_perp + fsc_big + pe + chl_big + chl_small, data=train_cleaned)
+```
+
+# Prediction and Evaluation
+```{r cache=T}
+pred_svm_2 = predict(model_svm_2, test_cleaned, type='class')
+table(test_cleaned$pop, pred_svm_2)
+
+pred_result_svm_2 = pred_svm_2 == test_cleaned$pop
+sum(pred_result_svm_2) / length(pred_result_svm_2)
+
+summary(pred_svm_2 == test_cleaned$pop)
+33253/(33253+2918)
+
+acc_svm_2 = confusionMatrix(pred_svm_2, test_cleaned$pop)$overall['Accuracy']
+acc_svm_2
+
+qplot(time, chl_big, data = train, color = pop)
+```
+
+

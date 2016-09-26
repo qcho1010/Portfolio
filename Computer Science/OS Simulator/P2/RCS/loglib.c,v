@@ -1,0 +1,312 @@
+head	1.5;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.5
+date	2016.01.29.22.04.13;	author o2-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2016.01.29.12.23.55;	author o2-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2016.01.29.10.51.59;	author o2-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2016.01.29.08.05.16;	author o2-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2016.01.29.07.48.39;	author o2-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@initial check-in of file
+@
+
+
+1.5
+log
+@impleted savelog function and getlog function
+fixed the garbage string printing on the log
+@
+text
+@#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include "log.h"
+ 
+typedef struct list_struct {
+     data_t item;
+     struct list_struct *next;
+} log_t;
+ 
+static log_t *headptr = NULL;
+static log_t *tailptr = NULL;
+int error;
+ 
+int addmsg(data_t data) {	
+	log_t *msgStruct;
+	int msgSize;
+	
+	// allocates enough space for a string containing the entire log, 
+	// total size = size of log structure, length of the incomming string and +1 for \n
+	msgSize = sizeof(log_t) + strlen(data.string) + 1;
+	
+	// if it can't add message size, exit
+	if ((msgStruct = (log_t*)(malloc(msgSize)))	== NULL) {
+		errno = error;
+		perror("Memory allocation failed\n");		
+		return -1;
+	}
+	// copy values
+	msgStruct->item.time = data.time;
+	msgStruct->item.string = (char *)msgStruct + sizeof(log_t);
+	strcpy(msgStruct->item.string, data.string);
+	
+	// if this is the first time executing
+	// then assign head pointer to msgStruct, since it's empty already
+	if(headptr == NULL) headptr = msgStruct;	
+	// if there are already que
+	// then assign current struct into next and wait for the turn.
+	else tailptr->next = msgStruct;
+	tailptr = msgStruct;
+	
+	// If successful return 0 else -1
+   return 0;
+}
+
+
+// releases all the storage that has been allocated for 
+// the logged messages and empties the list of logged messages.
+void clearlog(void) {
+	// copy current ptr in temperary structure
+    log_t *tmpStruct = headptr;
+	
+		// loop continues untill all head structures are empty
+    while (tmpStruct) {
+        tmpStruct = headptr->next;
+        free(headptr);
+        headptr = tmpStruct;
+    }
+}
+
+ // copies the log into this string, and returns a pointer to the string
+ char *getlog(void) { 
+ 	// copy current ptr in nxtStruct
+	log_t *nxtStruct = headptr;
+	
+	int strSize;
+	char *wholeLog;
+		
+	// loop continues untill all remaining structures are empty
+	while (nxtStruct) {
+		// get the string size to allocate the memory, +1 for \n
+		strSize += strlen(nxtStruct->item.string) + 1;
+		nxtStruct = nxtStruct->next;
+	}
+	
+	// assigning size of wholeLog
+	if ((wholeLog = (char *)malloc(strSize + 1)) == NULL) {
+		errno = error;
+		perror("Memory allocation failed\n");		
+		return NULL;
+	}
+	
+	// go back to head pointer
+	nxtStruct = headptr;
+	
+	// loop continues untill all remaining structures are empty
+	while (nxtStruct) {
+		if (nxtStruct == headptr)
+			strcat(strcpy(wholeLog, nxtStruct->item.string), "\n");
+		else
+			strcat(strcat(wholeLog, nxtStruct->item.string), "\n");
+		nxtStruct = nxtStruct->next;
+	}
+  	return wholeLog;
+ }
+  
+// saves the logged messages to a disk file.
+int savelog(char *filename) {
+	log_t *nxtStruct = headptr;
+	FILE *file;
+	char *time;
+	char fullFileName[15] = "";
+	
+	if (filename == NULL) {
+		errno = error;
+		perror("File name isn't valied\n");		
+		return -1;
+	}
+	
+	// add .log extension to the filename
+	sprintf(fullFileName, "%s.log", filename);
+
+	if ((file = fopen(fullFileName, "w")) == NULL) {
+		errno = error;
+		perror("File creation failed\n");		
+		return -1;
+	}
+	
+	// write on to the file untill the empty string
+	while (nxtStruct) {
+		// temp struct to hold the time Info.
+		struct tm *timeInfo;
+		
+		// convert the time info into proper formmat
+		timeInfo = localtime(&nxtStruct->item.time);
+		
+		// write the log
+		fprintf(file, "%02d:%02d:%02d\t", timeInfo->tm_hour, timeInfo->tm_min, timeInfo->tm_sec);
+		fprintf(file, "%s\n", nxtStruct->item.string);
+
+		nxtStruct = nxtStruct->next;		
+	}
+
+	if (fclose(file)) {
+		errno = error;
+		perror("File saving failed\n");		
+		return -1;
+	}
+	// If successful return 0 else -1
+   return 0;
+}
+@
+
+
+1.4
+log
+@implemented getlog function
+@
+text
+@d1 1
+d25 1
+a25 1
+	if (msg = (log_t*)(malloc(msgSize))	== NULL) {
+d32 2
+a33 2
+	msgStruct->time.string = (char *)msgStruct + sizeof(log_t);
+	strcpy(msgStruct->time.string, data.string);
+d47 1
+d50 1
+a50 1
+void clearlog(void) {  
+d52 1
+a52 1
+	log_t *tmpStruct = headptr;
+d54 7
+a60 11
+	// loop continues untill all head structures are empty
+	while(tmpStruct) {
+			headptr = headptr->next;
+			free(tmpStruct->item.string);
+			free(tmpStruct);
+			tmpStruct = headptr;
+	}
+	// making sure tail sturctures are emptying also
+	tailptr->next = NULL;
+	tailptr = NULL;
+} 
+d62 3
+a64 3
+// copies the log into this string, and returns a pointer to the string
+char *getlog(void) {
+	// copy current ptr in temperary structure
+d67 19
+a85 2
+	// need this line to store the first string before over righting nxtStruct 
+	char *wholeLog = nxtStruct ->item.string;
+d88 5
+a92 1
+	while(nxtStruct) {
+d94 30
+a123 2
+		char *tempLog1 = nxtStruct->item.string;
+		char *tempLog2 = wholeLog;
+d125 2
+a126 6
+		// assigning size of wholeLog dynamically and +2 for \n
+		if ((wholeLog = malloc(sizeof(strlen(tempLog1) + strlen(tempLog2)) + 2)) == NULL) {
+			errno = error;
+			perror("Memory allocation failed\n");		
+			return NULL;
+		}
+d128 5
+a132 2
+		// combining all temp logs in to whole
+		sprintf(wholeLog, "%s%s", tempLog1, tempLog2);
+a133 6
+	// If successful return a ptr to log string else NULL
+	return wholeLog;
+}
+ 
+// saves the logged messages to a disk file.
+int savelog(char *filename) {
+d135 5
+@
+
+
+1.3
+log
+@added expressions and size checking
+@
+text
+@d3 1
+d13 1
+d15 1
+a15 1
+int addmsg(data_t data) {
+d18 1
+d20 1
+a20 1
+	// total size = size of log structure, length of the incomming string and +1 for empty string
+d24 5
+a28 2
+	if (msg = (log_t*)(malloc(msgSize))	== NULL) return -1;
+	
+d34 8
+d49 13
+d66 22
+a87 1
+
+d89 1
+a89 1
+	return NULL;
+@
+
+
+1.2
+log
+@added structures
+added comments
+@
+text
+@d14 14
+a27 1
+
+a36 1
+// allocates enough space for a string containing the entire log, 
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 13
+d15 23
+@

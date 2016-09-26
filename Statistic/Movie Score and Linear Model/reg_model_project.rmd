@@ -1,0 +1,339 @@
+---
+title: "Modeling and prediction for movies"
+output:
+  pdf_document: default
+  html_document:
+    fig_height: 4
+    highlight: pygments
+    theme: spacelab
+---
+
+## Setup
+
+### Load packages
+
+```{r load-packages, message = FALSE, warning = F}
+library(ggplot2)
+library(dplyr)
+library(statsr)
+```
+
+### Load data
+
+Make sure your data and R Markdown files are in the same directory. When loaded
+your data file will be called `movies`. Delete this note when before you submit 
+your work. 
+
+```{r load-data}
+setwd("F:/specialization/22-Master Statistics with R (Duke University)/data")
+movies <- readRDS("movies01.rds")
+```
+
+
+* * *
+
+## Part 1: Data
+The data set is comprised of 651 randomly sampled movies produced and released before 2016.
+The data is about how much audiences and critics like movies as well as numerous other variables about the movies.  Tt includes information from Rotten Tomatoes and IMDB for a random sample of movies.  
+
+We are interested in learning what attributes make a movie popular also interested in learning something new about movies. 
+
+
+* * *
+
+## Part 2: Research question
+Does the data suggest that, critics rating in Rotten Tomatoes has relationship with audience score and does number of awards correlated with both the explantory and response variables?  
+
+**Exploratory variable** : Categorical variable for audience rating on Rotten Tomatoes (Spilled, Upright)  
+-- critics_rating  
+**Comfonding variable** : Categorical variable for critics rating on Rotten Tomatoes (Certified Fresh, Fresh, Rotten)  
+-- audience_rating  
+**Response variable** : Audience score on Rotten Tomatoes  
+-- audience_score  
+
+* * *
+
+## Part 3: Exploratory data analysis
+### Audience Score
+**Checking the skewness**
+```{r cache=T}
+ggplot(movies, aes(audience_score)) +
+     geom_histogram(binwidth = 2)
+```
+
+Okay it has such strong skewness of the acore distribution. but I want nearly perfect normal distribution for further inference.  
+
+**Apply Sampling Distribution**
+```{r cache=T}
+sample_means50 <- movies %>%
+     rep_sample_n(size = 50, reps = 15000, replace = TRUE) %>%
+     summarise(x_bar = mean(audience_score))
+ggplot(data = sample_means50, aes(x = x_bar)) +
+  geom_histogram(binwidth = .3)
+```
+
+Okay now we can build 95% CI with Sampling Distribution.  
+
+**Building 95% CI with Sampling Distribution**
+```{r cache=T}
+z_star_95 <- qnorm(.975)
+z_star_95
+
+n <- 60
+ci <- movies %>%
+     rep_sample_n(size = 60, reps = 50, replace = TRUE) %>%
+     summarise(lower = mean(audience_score) - z_star_95 * (sd(audience_score) / sqrt(n)),
+               upper = mean(audience_score) + z_star_95 * (sd(audience_score) / sqrt(n)))
+ci %>%
+  slice(1:5)
+```
+
+**Plotting Confidence Interval**
+```{r cache=T}
+inference(y = audience_score, data = movies, statistic = "mean", type = "ci", 
+          conf_level = 0.95, method = "theoretical", order = c("Yes","No"))
+
+# true population mean
+params <- movies %>%
+     summarise(mu = mean(audience_score))
+
+ci <- ci %>%
+     mutate(capture_mu = ifelse(lower < params$mu & upper > params$mu, "yes", "no"))
+
+ci_data <- data.frame(ci_id = c(1:50, 1:50),
+                      ci_bounds = c(ci$lower, ci$upper),
+                      capture_mu = c(ci$capture, ci$capture))
+
+ggplot(data = ci_data, aes(x = ci_bounds, y = ci_id, group = ci_id, color = capture_mu)) +
+     geom_point(size = 2) +  # add points at the ends, size = 2
+     geom_line() +           # connect with lines
+     geom_vline(xintercept = params$mu, color = "darkgray") # draw vertical line
+```
+
+Interpretation:
+The population mean of audience score lies between these two bounds of 60.8062 , 63.9189, since 95% of the time confidence intervals contain the true mean.
+
+
+### Research quesion:  
+```{r cache=T}
+ggplot(movies, aes(critics_rating, audience_score)) + 
+     geom_boxplot(aes(colour=popularity)) +
+     labs(title = "Audience Score vs. Critics Rating") +
+     xlab("Critics Rating") +
+     ylab("Audience Score")
+
+movies %>%
+     group_by(critics_rating) %>%
+     summarise(mean(audience_score))
+```
+
+
+```{r cache=T}
+ggplot(movies, aes(audience_rating, audience_score)) + 
+     geom_boxplot(aes(colour=popularity))
+
+movies %>%
+     group_by(audience_rating) %>%
+     summarise(mean(audience_score))
+```
+
+Interpretation:  
+Box plot shows that both critics and audience rating variables have strong relationship with audience score. the mean of Certified Fresh
+
+**Audience Score vs Critices Rating**  
+  $H_0: \mu_{1} = \mu_{2} = \mu_{3} ... = \mu_{k}$; $H_A:$ At least one mean is different  
+
+```{r cache=T}
+model <- aov(audience_score ~ critics_rating, movies)
+anova(model)
+result <- 100347/(100347+165473)
+result
+
+# We need to caluclate new p-value for ANOVA
+k <- length(unique(movies$critics_rating))
+k <- k*(k-1)/2 
+alpha <- .05
+alpha_adj <- alpha/k
+alpha_adj
+```
+
+Interpretation:  
+Over 37% percent of data is explained by this anlysis else are not explained by this variables which indicate that this variables is great explanatory variable.  
+Since adjust p-value is .017, we reject the null hypothesis because F value is 2.2e-16.
+Therefore we can conclude that there are at least two group means are significantly different from each other.
+
+**Audience Score vs Audience Rating**  
+  $H_0: \mu_{Spilled} = \mu_{Upright}$; $H_A: \mu_{Spilled} \ne \mu_{Upright}$
+```{r cache=T}
+# Confidence Interval with function (Mean : Catagorical vs Quantative)
+inference(y = audience_score, x = audience_rating, data = movies, statistic = "mean", type = "ci", 
+          method = "theoretical", order = c("Spilled","Upright"))
+
+# Hypothesis Test with functions (Mean : Catagorical vs Quantative)
+inference(y = audience_score, x = audience_rating, data = movies, statistic = "mean", type = "ht", null = 0, 
+          alternative = "twosided", method = "theoretical")
+```
+
+Interpretation:  
+The population mean difference of two groups lies btween there two bounds of -37 and -33, since 95% of the time confidence intervals contain the tru means.  Since the p-val is less than .05 we will reject the null hypothesis and accept the alternative hypothesis that aduience rating is effecting on aduience score.  
+
+```{r cache=T}
+# Anova
+model <- aov(audience_score ~ audience_rating, movies)
+anova(model)
+result <- 198690/(198690+67130)
+result
+
+# We need to caluclate new p-value for ANOVA
+k <- length(unique(movies$critics_rating))
+k <- k*(k-1)/2 
+alpha <- .05
+alpha_adj <- alpha/k
+alpha_adj
+```
+
+Interpretation:  
+Over 74% percent of data is explained by this anlysis else are not explained by this variables which indicate that this variables is great explanatory variable.  
+Since adjust p-value is .017, we reject the null hypothesis because F value is 2.2e-16.
+Therefore we can conclude that there are at least two group means are significantly different from each other.
+
+* * *
+
+## Part 4: Modeling
+```{r cache=T}
+# Build base model
+mdl_lm0 <- lm(audience_score ~ ., movies)
+sum_lm0 <- summary(mdl_lm0)
+sum_lm0
+sum_lm0$adj.r.squared
+```
+
+Wow we already have close to 1 R squared, this base model is already good.  However, we need to explor a bit more and see if we can improve this model.  
+First I'm going remove genre since it has such high p-value.  
+
+```{r cache=T}
+mdl_lm1 <- lm(audience_score ~ . -genre, movies)
+sum_lm1 <- summary(mdl_lm1)
+sum_lm1
+sum_lm1$adj.r.squared
+```
+
+By removing genre, R squared reduced, so we are going to keep ganre in the model model.  
+And now I'm going to remove award variables with same reason.
+
+```{r cache=T}
+mdl_lm3 <- lm(audience_score ~ . -best_pic_nom -best_pic_win -best_actor_win -best_actress_win -best_dir_win, movies)
+sum_lm3 <- summary(mdl_lm3)
+sum_lm3
+sum_lm3$adj.r.squared
+```
+
+By removing award variables, we have a bit higher R squared which is good.
+Now I'm going to remove, mpaa_rating variables.
+```{r cache=T}
+mdl_lm4 <- lm(audience_score ~ . -best_pic_nom -best_pic_win -best_actor_win -best_actress_win -best_dir_win -mpaa_rating, movies)
+sum_lm4 <- summary(mdl_lm4)
+sum_lm4
+sum_lm4$adj.r.squared
+```
+
+Again we gained a bit more R squared value. We will continue this process until we do not have any more R squared gain.
+
+```{r cache=T}
+mdl_lm5 <- lm(audience_score ~ . -best_pic_nom -best_pic_win -best_actor_win 
+              -best_actress_win -best_dir_win -mpaa_rating -top200_box -critics_score, movies)
+sum_lm5 <- summary(mdl_lm5)
+sum_lm5$adj.r.squared
+
+mdl_lm6 <- lm(audience_score ~ . -best_pic_nom -best_pic_win -best_actor_win 
+              -best_actress_win -best_dir_win -mpaa_rating -top200_box -critics_score -popularity, movies)
+sum_lm6 <- summary(mdl_lm6)
+sum_lm6$adj.r.squared
+```
+
+Okay we finally found the right combination of predictors with has R squared of .8863
+I'm gonig to add the cluster variables to see if it improves a bit
+```{r cache=T}
+setwd("F:/specialization/22-Master Statistics with R (Duke University)/data")
+movies <- readRDS("movies04_yesCluster.rds")
+mdl_lm7 <- lm(audience_score ~ ., movies)
+sum_lm7 <- summary(mdl_lm7)
+sum_lm7$adj.r.squared
+```
+
+Okay, so cluster variables does not do much, we are going back to previous dataset.
+
+### Model Dignostic
+**Nearly Normal Residuals with mean 0**
+```{r cache=T}
+# Nearly normal residuals: Residuals are right skewed, but the sample size is large, so this may not be an important violation of conditions.
+setwd("F:/specialization/22-Master Statistics with R (Duke University)/data")
+movies <- readRDS("movies02.rds")
+mdl_lm6 <- lm(audience_score ~ ., movies)
+
+ggplot(mdl_lm6, aes(.resid)) +
+     geom_histogram(binwidth = 2) + 
+     xlab("Residuals")
+
+ggplot(mdl_lm6, aes(sample = .resid)) + 
+     stat_qq()
+```
+
+**Constan Variability of Residuals**
+```{r cache=T}
+# Linear association: The residuals plot shows a random scatter.
+# Constant variance of residuals: No fan shape in residuals plot.
+ggplot(mdl_lm6, aes(.fitted, .resid)) +
+     geom_point() +
+     geom_hline(yintercept = 0, linetype = "dashed") +
+     xlab("Fitted values") +
+     ylab("Residuals")
+```
+
+The model passes all the diagnostic tests.  
+
+**Correlation plot**
+```{r cache=T}
+
+library(GGally)
+library(psych)
+pairs.panels(movies[,3:ncol(movies)])
+```
+
+Correlations between variables seems to be okay.  
+
+* * *
+
+## Part 5: Prediction
+
+```{r cache=T}
+setwd("F:/specialization/22-Master Statistics with R (Duke University)/data")
+movies <- readRDS("movies02.rds")
+str(movies)
+```
+
+I'm going to exclude few movies before I build the model so that i can predict the score for that movie which is not included in the sample.
+
+```{r cache=T}
+rand <- sample(nrow(movies), 5)
+test <- movies[rand, ]
+train <- movies[-rand, ]
+
+mdl_lm <- lm(audience_score ~ ., train)
+summary(mdl_lm)
+
+y_hat <- round(predict(mdl_lm, test), 0)
+y <- test$audience_score
+total_r_sq <- sum((y - y_hat)^2)
+
+data.frame("Actual y" = y, "Predicted y" = y_hat)
+print(paste0("R Squared : ", total_r_sq))
+```
+
+* * *
+
+## Part 6: Conclusion
+
+I've created new variables called date_dff which is the difference between the thether release date and dvd release date.  
+I noticed the popular movies tend to wait longer till DVD release wheres failure movies comes out DVD faster.  Oviously this variables contributed well in the model.  Also I've noticed that variables with nearly zero variance have all most no effects on the model.  Also unbalanced categorical variables does not do much in the model for example, 5 yes and 700 no.  
+Linear model is very simple yet powerful than I thought and it does great job to picking the importatn variables.  

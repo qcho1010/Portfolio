@@ -1,0 +1,76 @@
+Program Name: swim_mill
+Developer: Kyu Cho
+Class: CS 4760 - Operating System.
+Version 1.15
+09/28/15
+
+
+[File lists]
+swim_mill.c
+swim_mill.h
+fish.c
+pellet.ca
+
+README
+RCS
+makefile
+
+
+[Objective]
+ - Fish eats randomly dropped miltiple pellets for 30 seconds.
+ - Ignore the pellets that are impossible to reach in time.
+ - Find the cloest one but the cloest pellet can be updated every time when new pellet is dropped.
+
+[Implemented algorithm]
+[Solution 4]
+	Deadlock Avoidence
+
+[Finding Closest Distance]
+you need a x,y value when the pellets are dropped
+when pellet is dropped, send a coordinate to fish
+	need a data structure to store the initial the coordinate
+		create integer array with size of 20 shared memeory with fish<->pellets		
+			ex) y=10, x=2 will store 1002
+			use string manipulation to sort out the cordinate and calculate the distance
+With distance move toward the pellet if it's possible
+	ex) fish speed = 2, pellet spped 1; 
+	possilbe 	if pPosY = 4 and fPosX = 2
+	not possilbe	if pPosY = 3 and fPosX = 2
+
+[Check if the dropped pellet is closer one and possible to eat]
+when pellet gives you the signal do the iteration again
+loop through 2d arr (pretend everything is frozen)				
+	store all xy value of each pellet and store in arr1
+	calculate the points for each pellets and store in arr2
+		use getFishPose()
+	find the minimum number and its index ex) 5
+	empty the array;
+	go to arr1[5] and align with it
+
+[Pellet termination]
+Pellet will continue to move down untill it's eatten or out of grid
+During the pellets turn
+	Pellet checks if next move is out of gird if so
+		change grid to '.' and terminate
+	or Checks if current popsition xp is same is fish's xy 
+		change grid to 'P' and terminate
+	Pellet will move 1step down when its turn comes, then wait till next turn to come
+
+Fish moves toward X pellet
+During the fish's turn
+	Every fish turn, it check the closet pellet and
+	it moves 2steps toward Pellet's X value, then wait till next turn to come
+
+
+[Connecting wiht Process function]
+Stay in the process untill my status becomes idle
+when process is created -> find the empty index by looping
+	before the pellet is died -> mark that that flag will be empty.
+
+[Eatten pellet]
+	use tree to delate the node
+	[Successor] (when key value is delated, successor can replace that spot without disturbing the order)
+		No right child
+			closest ancester node that it's left child is key node
+		right child
+			leftmost decendent of its child

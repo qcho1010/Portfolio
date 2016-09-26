@@ -1,0 +1,154 @@
+---
+title: "Week5-4_AUTOMATING REVIEWS IN MEDICINE"
+author: "Kyu Cho"
+date: "July 4, 2015"
+output: html_document
+---
+# Introduction
+The medical literature is enormous. Pubmed, a database of medical publications maintained by the U.S. National Library of Medicine, has indexed over 23 million medical publications. Further, the rate of medical publication has increased over time, and now there are nearly 1 million new publications in the field each year, or more than one per minute.  
+
+The large size and fast-changing nature of the medical literature has increased the need for reviews, which search databases like Pubmed for papers on a particular topic and then report results from the papers found. While such reviews are often performed manually, with multiple people reviewing each search result, this is tedious and time consuming. In this problem, we will see how text analytics can be used to automate the process of information retrieval.  
+
+# Variables
+- title = title
+- abstracts = papers retrieved in a Pubmed search.
+- trial = Each search result is labeled with whether the paper is a clinical trial testing a drug therapy for cancer (variable trial).  
+These labels were obtained by two people reviewing each search result and accessing the actual paper if necessary, as part of a literature review of clinical trials testing drug therapies for advanced and metastatic breast cancer.  
+
+```{r cache=TRUE, echo=TRUE}
+library(caTools)
+library(tm)
+library(SnowballC)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(ROCR)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data5")
+
+# stringsAsFactors false for working on a text analytics to read in properly.
+trials = read.csv("clinical_trial.csv", stringsAsFactors = FALSE)
+summary(trials)
+str(trials)
+```
+
+# Understanding the Data
+```{r cache=TRUE}
+# How many characters are there in the longest abstract?
+max(nchar(trials$abstract))
+
+# How many search results provided no abstract? (HINT: A search result provided no abstract if the number of characters in the abstract field is zero.)
+sum(nchar(trials$abstract)==0)
+
+# Find the observation with the minimum number of characters in the title (the variable "title") out of all of the observations in this dataset. What is the text of the title of this article? 
+which.min(nchar(trials$title))
+trials$title[1258]
+```
+
+# Preparing the courpus
+## Cleaning the data
+```{r cache=TRUE}
+trials$trial = as.factor(trials$trial)
+
+corpusTitle = Corpus(VectorSource(trials$title)) 
+corpusAbstract = Corpus(VectorSource(trials$abstract)) 
+
+corpusTitle = tm_map(corpusTitle, tolower)
+corpusAbstract = tm_map(corpusAbstract, tolower)
+
+corpusTitle = tm_map(corpusTitle, PlainTextDocument)
+corpusAbstract = tm_map(corpusAbstract, PlainTextDocument)
+
+corpusTitle = tm_map(corpusTitle, removePunctuation)
+corpusAbstract = tm_map(corpusAbstract, removePunctuation)
+
+corpusTitle = tm_map(corpusTitle, removeWords, stopwords("english"))
+corpusAbstract = tm_map(corpusAbstract, removeWords, stopwords("english"))
+
+corpusTitle = tm_map(corpusTitle, stemDocument)
+corpusAbstract = tm_map(corpusAbstract, stemDocument)
+```
+
+## Removing SparseTerms
+```{r cache=TRUE}
+# Creat Matrix
+mTitle = DocumentTermMatrix(corpusTitle)
+mAbstract = DocumentTermMatrix(corpusAbstract)
+
+# Filtering
+mTitle = removeSparseTerms(mTitle, .95)
+mAbstract = removeSparseTerms(mAbstract, .95)
+
+# Conerting into data frame
+dfTitle = as.data.frame(as.matrix(mTitle))
+dfAbstract = as.data.frame(as.matrix(mAbstract))
+
+# We want to combine dtmTitle and dtmAbstract into a single data frame to make predictions. However, some of the variables in these data frames have the same names. 
+# Add T to Title variables, A to Abstract variable name.
+colnames(dfTitle) = paste0("T", colnames(dfTitle))
+colnames(dfAbstract) = paste0("A", colnames(dfAbstract))
+colnames(dfTitle)
+```
+
+```{r cache=TRUE, warning=FALSE}
+# Combine two dataframes
+dfTA = cbind(dfTitle, dfAbstract)
+
+```
+
+```{r cache=TRUE}
+# Add the trial variable
+dfTA$trial = trials$trial
+
+# Find the most frequent word stem across all the abstracts.
+which.max(colSums(dfAbstract))
+```
+
+# Build model
+## Base model
+```{r cache=TRUE}
+# Split data
+set.seed(144)
+split = sample.split(dfTA$trial, SplitRatio=0.7)
+train = subset(dfTA, split==TRUE)
+test = subset(dfTA, split==FALSE)
+
+# Accuracy of the base model
+table = table(train$trial)
+accuracy = table[1]/sum(table)
+accuracy
+```
+
+## CART model
+```{r cache=TRUE}
+model = rpart(trial~., data=train, method="class")
+prp(model)
+
+# Accurary of trainning set
+pred = predict(model)[,2]
+table2 = table(train$trial, pred >= 0.5)
+accuracy2 = (table2[1,1]+table2[2,2])/sum(table2)
+accuracy2
+
+# Sensitivity of trainning set
+sensitivity = table2[2,2]/(table2[2,2] + table2[2,1])
+
+# Specificity of trainning set
+specificity = table2[1,1]/(table2[1,1] + table2[1,2])
+
+# Accuracy of testing set
+pred2 = predict(model, newdata=test)[,2]
+table3 = table(test$trial, pred2 >= 0.5)
+accuracy3 = (table3[1,1]+table3[2,2])/sum(table3)
+accuracy3
+```
+
+# Validation
+```{r cache=TRUE}
+# ROC Curve
+predROCR = prediction(pred2, test$trial)
+perfROCR = performance(predROCR, "tpr", "fpr")
+plot(perfROCR, colorize=TRUE, lwd = 5)
+performance(predROCR, "auc")@y.values
+```
+As always, we prefer a lower threshold in cases where false negatives are more costly than false positives, since we will make fewer negative predictions.

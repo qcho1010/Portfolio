@@ -1,0 +1,171 @@
+---
+title: "Week3-4"
+author: "Kyu Cho"
+date: "Monday, June 29, 2015"
+output: html_document
+---
+# Introduction
+The music industry has a well-developed market with a global annual revenue around $15 billion. The recording industry is highly competitive and is dominated by three big production companies which make up nearly 82% of the total annual album sales. 
+
+Artists are at the core of the music industry and record labels provide them with the necessary resources to sell their music on a large scale. A record label incurs numerous costs (studio recording, marketing, distribution, and touring) in exchange for a percentage of the profits from album sales, singles and concert tickets. 
+
+Unfortunately, the success of an artist's release is highly uncertain: a single may be extremely popular, resulting in widespread radio play and digital downloads, while another single may turn out quite unpopular, and therefore unprofitable. 
+
+Knowing the competitive nature of the recording industry, record labels face the fundamental decision problem of which musical releases to support to maximize their financial success. 
+
+How can we use analytics to predict the popularity of a song? In this assignment, we challenge ourselves to predict whether a song will reach a spot in the Top 10 of the Billboard Hot 100 Chart.
+
+# Variables
+- year = the year the song was released
+- songtitle = the title of the song
+- artistname = the name of the artist of the song
+- songID and artistID = identifying variables for the song and artist
+- timesignature and timesignature_confidence = a variable estimating the time signature of the song, and the confidence in the estimate
+- loudness = a continuous variable indicating the average amplitude of the audio in decibels
+- tempo and tempo_confidence = a variable indicating the estimated beats per minute of the song, and the confidence in the estimate
+- key and key_confidence = a variable with twelve levels indicating the estimated key of the song (C, C#, . . ., B), and the confidence in the estimate
+- energy = a variable that represents the overall acoustic energy of the song, using a mix of features such as loudness
+pitch = a continuous variable that indicates the pitch of the song
+- timbre_0_min, timbre_0_max, timbre_1_min, timbre_1_max, . . . , timbre_11_min, and timbre_11_max = variables that indicate the minimum/maximum values over all segments for each of the twelve values in the timbre vector (resulting in 24 continuous variables)
+- Top10 = a binary variable indicating whether or not the song made it to the Top 10 of the Billboard Hot 100 Chart (1 if it was in the top 10, and 0 if it was not)
+
+
+```{r cache=TRUE}
+library(dplyr)
+setwd("D:/Google Drive/College/4-The Analytics Edge/data3")
+songs = read.csv("songs.csv")
+# summary(songs)
+# str(songs)
+# head(songs)
+```
+
+# UNDERSTANDING THE DATA
+```{r cache=TRUE}
+# How many observations (songs) are from the year 2010?
+sum(songs$year==2010)
+nrow(subset(songs, year >= 2010))
+table(songs$year)
+
+# How many songs does the dataset include for which the artist name is "Michael Jackson"?
+sum(songs$artistname=="Michael Jackson")
+nrow(subset(songs, artistname == "Michael Jackson"))
+nrow(filter(songs, artistname == "Michael Jackson"))
+
+# Which of these songs by Michael Jackson made it to the Top 10? Select all that apply.
+MJTop10_1 = subset(songs, artistname == "Michael Jackson" & Top10 == 1)$songtitle
+MJTop10_2 = filter(songs, artistname == "Michael Jackson" & Top10 == 1)$songtitle
+MJTop10_3 = subset(songs, artistname =="Michael Jackson")
+MJTop10_1
+MJTop10_2
+MJTop10_3[c(which(MJTop10_3==1)),2]
+MJTop10_1[1]
+
+# What are the values of this variable that occur in our dataset? Select all that apply.
+sort(unique(songs$timesignature))
+levels(factor(songs$timesignature))
+
+# Which timesignature value is the most frequent among songs in our dataset?
+table(songs$timesignature)
+
+# Out of all of the songs in our dataset, the song with the highest tempo is one of the following songs. Which one is it?
+index <- which.max(songs$tempo)
+songs[index, "songtitle"]
+songs[which.max(songs$tempo),]$songtitle
+top_n(songs, 1, tempo)$songtitle
+subset(songs, tempo == max(songs$tempo))$songtitle
+songs$songtitle[which.max(songs$tempo)]
+```
+
+# CREATING OUR PREDICTION MODEL
+```{r cache=TRUE}
+SongsTrain = subset(songs, year <= 2009)
+SongsTest = subset(songs, year >= 2010)
+nrow(SongsTrain)
+```
+
+We are trying to predict whether or not a song will make it to the Top 10 of the Billboard Hot 100 Chart. Since the outcome variable is binary, we will build a logistic regression model. We'll start by using all song attributes as our independent variables, which we'll call Model 1. 
+```{r cache=TRUE}
+# Remove non-numeric variables
+nonvars = c("year", "songtitle", "artistname", "songID", "artistID")
+SongsTrain = SongsTrain[ , !(names(SongsTrain) %in% nonvars) ]
+SongsTest = SongsTest[ , !(names(SongsTest) %in% nonvars) ]
+SongsLog = glm(Top10 ~ ., data=SongsTrain, family=binomial)
+summary(SongsLog)
+```
+The coefficient estimate for loudness is positive, meaning that mainstream listeners prefer louder songs, which are those with heavier instrumentation. However, the coefficient estimate for energy is negative, meaning that mainstream listeners prefer songs that are less energetic, which are those with light instrumentation. These coefficients lead us to different conclusions!
+
+# BEWARE OF MULTICOLLINEARITY ISSUES
+```{r cache=TRUE}
+cor(SongsTrain$energy,SongsTrain$loudness)
+```
+Given that these two variables are highly correlated, Model 1 suffers from multicollinearity. To avoid this issue, we will omit one of these two variables and rerun the logistic regression. In the rest of this problem, we'll build two variations of our original model: Model 2, in which we keep "energy" and omit "loudness", and Model 3, in which we keep "loudness" and omit "energy".
+
+```{r cache=TRUE}
+# Model 1 without the independent variable "loudness"
+SongsLog2 = glm(Top10 ~ . - loudness, data=SongsTrain, family=binomial)
+summary(SongsLog2)
+```
+The coefficient estimate for energy is positive in Model 2, suggesting that songs with higher energy levels tend to be more popular. However, note that the variable energy is not significant in this model.
+
+```{r cache=TRUE}
+# Model 1 without the independent variable "energy"
+SongsLog3 = glm(Top10 ~ . - energy, data=SongsTrain, family=binomial)
+summary(SongsLog3)
+```
+Looking at the output of summary(SongsLog3), we can see that loudness has a positive coefficient estimate, meaning that our model predicts that songs with heavier instrumentation tend to be more popular. This is the same conclusion we got from Model 2.
+
+# VALIDATING OUR MODEL
+What is the accuracy of Model 3 on the test set, using a threshold of 0.45?
+```{r cache=TRUE}
+prediction = predict(SongsLog3, newdata=SongsTest, type="response")
+
+# Find the perfect threshold
+library(ROCR)
+ROCRpred = prediction(prediction, SongsTest$Top10)
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+
+# increment the point by 0.1
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+
+confusion_matrix = table(SongsTest$Top10, prediction > 0.45)
+confusion_matrix
+
+# Accuracy
+(309+19)/(309+5+40+19)
+
+# Basline accuracy
+(309+5)/(309+5+40+19)
+
+# Senstivity
+19/(40+19)
+
+# Specivity
+309/(309+5)
+
+# Compute the AUC
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+
+Let's view the two models from an investment perspective. A production company is interested in investing in songs that are highly likely to make it to the Top 10. The company's objective is to minimize its risk of financial losses attributed to investing in songs that end up unpopular.  
+
+A competitive edge can therefore be achieved if we can provide the production company a list of songs that are highly likely to end up in the Top 10. We note that the baseline model does not prove useful, as it simply does not label any song as a hit. Let us see what our model has to offer.  
+
+How many songs does Model 3 correctly predict as Top 10 hits in 2010 (remember that all songs in 2010 went into our test set), using a threshold of 0.45? 
+```{r cache=TRUE}
+TP = sum(prediction > .45 & SongsTest$Top10)
+TP
+```
+How many non-hit songs does Model 3 predict will be Top 10 hits (again, looking at the test set), using a threshold of 0.45?  
+```{r cache=TRUE}
+FP <- sum(prediction>0.45 & !SongsTest$Top10)
+FP 
+```
+Model 3 provides conservative predictions, and predicts that a song will make it to the Top 10 very rarely. So while it detects less than half of the Top 10 songs, we can be very confident in the songs that it does predict to be Top 10 hits.
+
+
+
+
+
+
+
+

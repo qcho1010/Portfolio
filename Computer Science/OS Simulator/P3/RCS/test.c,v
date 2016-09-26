@@ -1,0 +1,49 @@
+head	1.1;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.1
+date	2015.09.30.06.00.39;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <time.h>
+#include <signal.h>
+#include <unistd.h>
+
+int main () {
+	clock_t start_t, end_t, total_t;
+
+   start_t = clock();
+	double delay, timer = 0;
+	while(delay < 4) {
+		delay=0;
+		end_t = clock();
+		total_t = (double)(end_t - start_t) / CLOCKS_PER_SEC;
+		printf("Running time = %f seconds\n", total_t);
+		delay = total_t%5+1;
+		printf("Delaying time = %f seconds\n", delay);
+	}
+
+
+	return 0;
+}@

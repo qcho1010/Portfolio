@@ -1,0 +1,100 @@
+---
+title: "Unit1-6_Assign2_Internet Privacy"
+author: "Kyu Cho"
+date: "Saturday, June 13, 2015"
+output: html_document
+---
+#Introduction
+Internet privacy has gained widespread attention in recent years. To measure the degree to which people are concerned about hot-button issues like Internet privacy, social scientists conduct polls in which they interview a large number of people about the topic. In this assignment, we will analyze data from a July 2013 Pew Internet and American Life Project poll on Internet anonymity and privacy, which involved interviews across the United States. While the full polling data can be found here, we will use a more limited version of the results, available in AnonymityPoll.csv. The dataset has the following fields (all Internet use-related fields were only collected from interviewees who either use the Internet or have a smartphone):
+
+#Variables
+- Internet.Use: A binary variable indicating if the interviewee uses the Internet, at least occasionally (equals 1 if the interviewee uses the Internet, and equals 0 if the interviewee does not use the Internet).
+- Smartphone: A binary variable indicating if the interviewee has a smartphone (equals 1 if they do have a smartphone, and equals 0 if they don't have a smartphone).
+- Sex: Male or Female.
+- Age: Age in years.
+- State: State of residence of the interviewee.
+- Region: Census region of the interviewee (Midwest, Northeast, South, or West).
+- Conservativeness: Self-described level of conservativeness of interviewee, from 1 (very liberal) to 5 (very conservative).
+Info.On.Internet: Number of the following items this interviewee believes to be available on the Internet for others to see: (1) Their email address; (2) Their home address; (3) Their home phone - number; (4) Their cell phone number; (5) The employer/company they work for; (6) Their political party or political affiliation; (7) Things they've written that have their name on it; (8) A photo of them; (9) A video of them; (10) Which groups or organizations they belong to; and (11) Their birth date.
+- Worry.About.Info: A binary variable indicating if the interviewee worries about how much information is available about them on the Internet (equals 1 if they worry, and equals 0 if they don't worry).
+- Privacy.Importance: A score from 0 (privacy is not too important) to 100 (privacy is very important), which combines the degree to which they find privacy important in the following: (1) The websites they browse; (2) Knowledge of the place they are located when they use the Internet; (3) The content and files they download; (4) The times of day they are online; (5) The applications or programs they use; (6) The searches they perform; (7) The content of their email; (8) The people they exchange email with; and (9) The content of their online chats or hangouts with others.
+- Anonymity.Possible: A binary variable indicating if the interviewee thinks it's possible to use the Internet anonymously, meaning in such a way that online activities can't be traced back to them (equals 1 if he/she believes you can, and equals 0 if he/she believes you can't).
+- Tried.Masking.Identity: A binary variable indicating if the interviewee has ever tried to mask his/her identity when using the Internet (equals 1 if he/she has tried to mask his/her identity, and equals 0 if he/she has not tried to mask his/her identity).
+- Privacy.Laws.Effective: A binary variable indicating if the interviewee believes United States law provides reasonable privacy protection for Internet users (equals 1 if he/she believes it does, and equals 0 if he/she believes it doesn't).
+
+#Loading Data and Summarizing the Dataset
+```{r cache=TRUE}
+# Set the directory at where the data is located
+setwd("D:/Google Drive/College/4-The Analytics Edge/data/")
+
+# Read the Data
+poll  <- read.csv("AnonymityPoll.csv")
+str(poll)
+```
+
+How many interviewees responded that they use a smartphone?
+How many interviewees responded that they don't use a smartphone?
+How many interviewees did not respond to the question, resulting in a missing value, or NA, in the summary() output?
+```{r cache=TRUE}
+table(poll$Smartphone)
+summary(poll)
+```
+
+Which of the following are states in the Midwest census region? 
+```{r cache=TRUE}
+MidwestInterviewees = subset(poll, Region=="Midwest")
+tail(sort(table(MidwestInterviewees$State)))
+```
+
+Which was the state in the South census region with the largest number of interviewees?
+```{r cache=TRUE}
+SouthInterviewees = subset(poll, Region=="South")
+tail(sort(table(SouthInterviewees$State))) 
+```
+
+#INTERNET AND SMARTPHONE USERS  
+How many interviewees reported not having used the Internet and not having used a smartphone?  
+How many interviewees reported having used the Internet and having used a smartphone?  
+How many interviewees reported having used the Internet but not having used a smartphone?  
+How many interviewees reported having used a smartphone but not having used the Internet?  
+```{r cache=TRUE}
+table(poll$Internet.Use, poll$Smartphone)
+```
+
+How many interviewees have Smartphone or Internet?
+```{r cache=TRUE}
+limited <- subset(poll, Smartphone == 1 | Internet.Use == 1)
+summary(limited)
+```
+
+#SUMMARIZING OPINIONS ABOUT INTERNET PRIVACY  
+What proportion of interviewees who answered the Worry.About.Info question worry about how much information is available about them on the Internet? 
+```{r cache=TRUE}
+sum(limited$Worry.About.Info==1, na.rm=T)/sum(limited$Worry.About.Info==1 | limited$Worry.About.Info==0, na.rm=T)
+```
+
+What proportion of interviewees who answered the Anonymity.Possible question think it is possible to be completely anonymous on the Internet  
+```{r cache=TRUE}
+sum(limited$Anonymity.Possible == 1, na.rm=T)/sum(limited$Anonymity.Possible==1 | limited$Anonymity.Possible==0, na.rm=T)
+```
+
+#RELATING DEMOGRAPHICS TO POLLING RESULTS  
+```{r cache=TRUE}
+hist(poll$Age)
+# jitter() function addes notise to the value.
+plot(jitter(limited$Age), jitter(limited$Info.On.Internet))
+```
+
+What is the average Info.On.Internet value for smartphone users?  
+What is the average Info.On.Internet value for non-smartphone users?  
+```{r cache=TRUE}
+tapply(limited$Info.On.Internet, limited$Smartphone, mean)
+```
+
+What proportion of smartphone users who answered the Tried.Masking.Identity question have tried masking their identity when using the Internet?  
+
+What proportion of non-smartphone users who answered the Tried.Masking.Identity question have tried masking their identity when using the Internet?
+```{r cache=TRUE}
+table(limited$Tried.Masking.Identity, limited$Smartphone)
+```
+

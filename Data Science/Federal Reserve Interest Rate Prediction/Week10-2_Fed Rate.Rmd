@@ -1,0 +1,164 @@
+---
+title: "Untitled"
+author: "Kyu Cho"
+date: "August 24, 2015"
+output: html_document
+---
+# FORECASTING INTEREST RATE HIKES BY THE U.S. FEDERAL RESERVE
+# Introduction
+The federal funds rate is the key interest rate that the U.S. Federal Reserve uses to influence economic growth. The Federal Open Market Committee meets regularly to decide whether to increase, decrease, or maintain the target interest rate. Their choice has important ramifications that cascade through the economy, so the announcement of the interest rates is eagerly awaited each month.  
+
+In this problem, we will use analytics to try to predict when the Federal Reserve will raise interest rates. We will look at monthly economic and political data dating back to the mid-1960's. In this analysis, the dependent variable will be the binary outcome variable RaisedFedFunds, which takes value 1 if the federal funds rate was increased that month and 0 if it was lowered or stayed the same. For each month, the file federalFundsRate.csv contains the following independent variables:
+
+# Variabels
+- Date: The date the change was announced.
+- Chairman: The name of the Federal Reserve Chairman at the time the change was announced.
+PreviousRate: The federal funds rate in the prior month.
+- Streak: The current streak of raising or not raising the rate, e.g. +8 indicates the rate has been increased 8 months in a row, whereas -3 indicates the rate has been lowered or stayed the same for 3 months in a row.
+- GDP: The U.S. Gross Domestic Product, in Billions of Chained 2009 US Dollars.
+- Unemployment: The unemployment rate in the U.S.
+- CPI: The Consumer Price Index, an indicator of inflation, in 
+- HomeownershipRate: The rate of homeownership in the u.S.
+- DebtAsPctGDP: The U.S. national debt as a percentage of GDP
+- DemocraticPres: Whether the sitting U.S. President is a Democrat (DemocraticPres=1) or a Republican (DemocraticPres=0)
+- MonthsUntilElection: The number of remaining months until the next U.S. presidential election.
+
+## PROBLEM 1: LOADING THE DATA  
+Use the read.csv function to load the contents of federalFundsRate.csv into a data frame called fedFunds, using stringsAsFactors=FALSE. What proportion of months did the Fed raise the interest rate? 
+```{r cache=T}
+setwd("D:/Google Drive/College/4-The Analytics Edge/data10")
+fedFunds = read.csv("federalFundsRate.csv", stringsAsFactors=FALSE)
+str(fedFunds)
+
+validate = function(i) {
+    raised <<- 0
+    for (i in 1:nrow(fedFunds)) {
+        previous = fedFunds$PreviousRate[i]
+        current = fedFunds$PreviousRate[i+1]
+        if (!is.na(current) & current > previous) {
+            raised <<- raised + 1
+            }
+    }
+}
+validate()
+raised/nrow(fedFunds)
+
+# diff. method
+table(fedFunds$RaisedFedFunds)[2]/nrow(fedFunds)
+
+```
+
+## PROBLEM 2: THE LONGEST-SERVING FED CHAIR
+Which Federal Reserve Chair has presided over the most interest rate decisions?
+```{r cache=T}
+which.max(table(fedFunds$Chairman))
+```
+
+## PROBLEM 3 - CONVERTING VARIABLES TO FACTORS
+Convert the following variables to factors using the as.factor function:
+- Chairman
+- DemocraticPres
+- RaisedFedFunds
+```{r cache=T}
+fedFunds$Chairman = as.factor(fedFunds$Chairman)
+fedFunds$DemocraticPres = as.factor(fedFunds$DemocraticPres)
+fedFunds$RaisedFedFunds = as.factor(fedFunds$RaisedFedFunds)
+```
+
+Q : Which of the following methods requires the dependent variable be stored as a factor variable when training a model for classification?  
+A : We convert the outcome variable to a factor for the randomForest() method.  
+
+## PROBLEM 4 - SPLITTING INTO A TRAINING AND TESTING SET
+Obtain a random training/testing set split with:
+
+set.seed(201)  
+library(caTools)  
+spl = sample.split(fedFunds$RaisedFedFunds, 0.7)  
+
+Split months into a training data frame called "training" using the observations for which spl is TRUE and a testing data frame called "testing" using the observations for which spl is FALSE.
+ 
+```{r cache=T}
+library(caTools)  
+set.seed(201)  
+spl = sample.split(fedFunds$RaisedFedFunds, 0.7) 
+
+training = subset(fedFunds, spl==TRUE)
+testing = subset(fedFunds, spl==TRUE)
+```
+
+Q : Why do we use the sample.split() function to split into a training and testing set?
+A :  It balances the dependent variable between the training and testing sets
+
+## PROBLEM 5 - TRAINING A LOGISTIC REGRESSION MODEL
+Train a logistic regression model using independent variables "PreviousRate", "Streak", "Unemployment", "HomeownershipRate", "DemocraticPres", and "MonthsUntilElection", using the training set to obtain the model.
+
+Which of the following characteristics are statistically significantly (p < 0.05, aka at least a * in the regression summary) associated with an increased chance of the federal funds rate being raised?
+```{r cache=T}
+model_glm = glm(RaisedFedFunds~PreviousRate+Streak+Unemployment+HomeownershipRate+DemocraticPres+MonthsUntilElection, data=training,  family="binomial") 
+
+# extract p-factors
+model_summary = summary(model_glm)$coef
+
+#independent variables significant at the p=0.05 level
+sort(model_summary[,4]<0.05)
+```
+
+## PROBLEM 6 - PREDICTING USING A LOGISTIC REGRESSION MODEL
+Imagine you are an analyst at a bank and your manager has asked you to predict whether the federal funds rate will be raised next month. You know that the rate has been lowered for 3 straight months (Streak = -3) and that the previous month's rate was 1.7%. The unemployment rate is 5.1% and the homeownership rate is 65.3%. The current U.S. president is a Republican and the next election will be held in 18 months. According to the logistic regression model you built in Problem 5, what is the predicted probability that the interest rate will be raised?
+```{r cache=T, hide=F}
+library(caret)
+
+# Prediction for custom data set
+testSet = data.frame(PreviousRate=1.7, Streak=-3, Unemployment=5.1, HomeownershipRate=65.3, DemocraticPres=0, MonthsUntilElection=18)
+testSet$DemocraticPres = as.factor(testSet$DemocraticPres)
+predict(model_glm, testSet, type="response")
+
+# Prediction for testing set
+pred_glm = predict(model_glm ,testing, type="response")
+tbl_glm = table(testing$RaisedFedFunds, pred_glm > 0.5)
+acc_glm = (tbl_glm[1.1]+tbl_glm[2,2])/sum(tbl_glm)
+acc_glm
+   
+# AUC
+library(ROCR)
+pred_rocr_glm = prediction(pred_glm, testing$RaisedFedFunds)
+perf_rocr_glm = performance(pred_rocr_glm, "tpr", "fpr")
+plot(perf_rocr_glm, colorize=TRUE, grid=TRUE)
+as.numeric(performance(pred_rocr_glm, "auc")@y.values)
+```
+
+## Cross validation
+```{r cache=T, warning=F, hide=F}
+# Cross-validation for CART model using caret package
+library(caret)
+library(e1071)
+library(rattle)
+library(rpart.plot)
+
+set.seed(201)
+tuneGrid = expand.grid(.cp = (1:50)*0.001)
+trControl  = trainControl(method = "cv",number = 10,repeats = 10)
+
+model_rp = train(RaisedFedFunds~PreviousRate+Streak+Unemployment+HomeownershipRate+DemocraticPres+MonthsUntilElection, data=training, method="rpart", trControl=trControl, tuneGrid=tuneGrid)
+model_rp
+
+model_rp_cv = rpart(RaisedFedFunds~PreviousRate+Streak+Unemployment+HomeownershipRate+DemocraticPres+MonthsUntilElection, data=training, method="class", control=rpart.control(cp=0.013))
+
+pred_rp_cv = predict(model_rp_cv, testing, type="class")
+conf_rp_cv = confusionMatrix(pred_rp_cv, testing$RaisedFedFunds)$overall['Accuracy']
+conf_rp_cv
+prp(model_rp_cv)
+fancyRpartPlot(model_rp_cv)
+```
+
+
+
+
+
+
+
+
+
+
+
+

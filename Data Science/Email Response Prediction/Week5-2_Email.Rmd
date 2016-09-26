@@ -1,0 +1,148 @@
+---
+title: "Week5-2_Text Analytics"
+author: "Kyu Cho"
+date: "July 4, 2015"
+output: html_document
+---
+
+```{r cache=TRUE, echo=TRUE}
+library(caTools)
+library(tm)
+library(SnowballC)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(ROCR)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data5")
+
+# stringsAsFactors false for working on a text analytics to read in properly.
+emails = read.csv("energy_bids.csv", stringsAsFactors = FALSE)
+summary(emails)
+str(emails)
+```
+
+# Understading the data
+```{r cache=TRUE}
+# Convert the horizontal orientation into vertical orientation to make it easy to read.
+head(strwrap(emails$email[1]))
+emails$responsive[1]
+
+head(strwrap(emails$email[2]))
+emails$responsive[2]
+
+# Responsive emails
+table(emails$responsive)
+```
+Relatively small proportion of emails responsive to the query.
+
+# Cleaning the data
+```{r cache=TRUE}
+emails$responsive = as.factor(emails$responsive)
+
+# Create corpus
+corpus = Corpus(VectorSource(emails$email))
+corpus = tm_map(corpus, tolower)
+corpus = tm_map(corpus, PlainTextDocument)
+corpus = tm_map(corpus, removePunctuation)
+corpus = tm_map(corpus, removeWords, stopwords("english"))
+corpus = tm_map(corpus, stemDocument)
+```
+Now the emails in this corpus are ready for our machine learning algorithms.
+
+# Removing sparesTerms
+We have too many indipendent variables which means it requires heavy computational. Let's remove some terms that don't appear very often.
+```{r cache=TRUE}
+# Create matrix
+dtm = DocumentTermMatrix(corpus)
+
+# Look at matrix 
+inspect(dtm[800:805,505:515])
+
+# Check for sparsity
+findFreqTerms(dtm, lowfreq=800)
+
+# Remove rest and keep the terms that appear in 3% in the document or more.
+dtm = removeSparseTerms(dtm, 0.97)
+dtm
+
+# Converting into dataframe
+labeledTerms = as.data.frame(as.matrix(dtm))
+
+# Add in the outcome variable
+labeledTerms$responsive = emails$responsive
+```
+
+# Build model
+## split dataset
+```{r cache=TRUE}
+set.seed(144)
+spl = sample.split(labeledTerms$responsive, 0.7)
+train = subset(labeledTerms, spl == TRUE)
+test = subset(labeledTerms, spl == FALSE)
+```
+
+# Build CART model
+```{r cache=TRUE}
+# Build a CART model
+emailCART = rpart(responsive~., data=train, method="class")
+prp(emailCART)
+```
+It's somewhat unsurprising that California shows up, because we know that Enron had a heavy involvement in the California energy markets.
+
+# Evaluation
+```{r cache=TRUE}
+# Make predictions on the test set
+pred = predict(emailCART, newdata=test)
+pred[1:10,]
+
+# Since we are looking for the value 1 which is the responsive, extract second col. 
+pred.prob = pred[,2]
+
+# Another method
+pred2 = predict(emailCART, newdata=test, type="class")
+
+# ROC curve
+predROCR = prediction(pred.prob, test$responsive)
+perfROCR = performance(predROCR, "tpr", "fpr")
+plot(perfROCR, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7), lwd=5)
+
+# Another method
+predROCR2 = prediction(pred[,2], test$responsive)
+perfROCR2 = performance(predROCR2, "tpr", "fpr")
+plot(perfROCR2, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7), lwd=5)
+
+
+# Compute accuracy
+table(test$responsive, pred.prob >= 0.2)
+table(test$responsive, pred2)
+(195+25)/(195+25+17+20)
+
+# Baseline model accuracy
+table(test$responsive)
+215/(215+42)
+```
+
+The place where a true positive rate of 70%, meaning that we're getting about 70% of all the responsive documents, and a false positive rate of about 20%, meaning that we're making mistakes and accidentally identifying as responsive.
+Now, since, typically, the vast majority of documents are non-responsive, operating at this cutoff would result, perhaps, in a large decrease in the amount of manual effort needed
+in the eDiscovery process. And we can see from the blue color of the plot at this particular location that we're looking at a threshold around maybe 0.2 or so, significantly lower than 50%, which is definitely what we would expect since we favor false positives to false negatives.
+
+```{r cache=TRUE}
+# Compute AUC
+performance(predROCR, "auc")@y.values
+```
+We can see that we have an AUC in the test set of 79.4%, which means that our model can differentiate between a randomly selected responsive and non-responsive document about 80% of the time.
+
+
+
+
+
+
+
+
+
+
+
+
+
+

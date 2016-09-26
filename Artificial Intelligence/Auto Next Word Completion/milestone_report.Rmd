@@ -1,0 +1,261 @@
+---
+title: "Assignment: Data Science Capstone Milestone Report"
+author: "Kyu Cho"
+date: "April 28, 2016"
+output: 
+    html_document:
+        theme: readable
+        highlight: tango
+        keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This data dcience capstone milestone report will cover with the basics, analyzing a large corpus of text documents obtainted from [Swiftkey](https://swiftkey.com/en) to discover the structure in the given data and how words are put together. For data pre-processing, the corpus will be cleaned and analyzed. Based on the processed data, data will be sampled to build the predictive text model.
+
+**SwiftKey** is one of the most popular smartphone keyboard apps available for both Android and iOS devices. Swiftkey has been installed in more than 300 million devices. SwiftKey estimates that its users have saved nearly 10 trillion keystrokes, across 100 languages, saving more than 100,000 years in combined typing time.
+
+The Capstone training data can be downloaded from the link below:
+
+https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip
+
+<div style="width:557px; height=487px">
+![Workflow for Milestone Report Preliminary Analysis](workflow.png)
+</div>
+
+## Reading the data
+
+```{r, cache=T, warning=FALSE, message=FALSE}
+setwd("E:/Google Drive/College/1-Data Science/17-Capston")
+
+twitter <- readLines(con <- file("./data/en_US.twitter.txt"), encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+blogs <- readLines(con <- file("./data/en_US.blogs.txt"), encoding = "UTF-8", skipNul = TRUE)
+close(con)
+
+news <- readLines(con <- file("./data/en_US.news.txt"), encoding = "UTF-8", skipNul = TRUE)
+close(con)
+```
+## Data Exploratory
+
+Basic data exploratory of the three datasets have been conducted by exploring properties such as:
+
+- total number of lines
+- number of words
+- file sizes
+
+```{r echo=FALSE, cache=T, message=FALSE, results="hide", warning=FALSE}
+#length
+twitterlength<-length(twitter)
+blogslength<-length(blogs)
+newslength<-length(news)
+
+#file size
+twitterSize<-file.info("./data/en_US.twitter.txt")$size / 1024 /1000
+newsSize<-file.info("./data/en_US.news.txt")$size / 1024 /1000
+blogsSize<-file.info("./data/en_US.blogs.txt")$size / 1024 /1000
+
+# word count
+twitterWords <- sum(sapply(gregexpr("\\S+", twitter), length))
+
+blogsWords <- sum(sapply(gregexpr("\\S+", blogs), length))
+
+newsWords <- sum(sapply(gregexpr("\\S+", news), length))
+
+
+words<-rbind(twitterWords, blogsWords, newsWords)
+lengths<-rbind(twitterlength, blogslength, newslength)
+sizes<-rbind(twitterSize, blogsSize, newsSize)
+df<-data.frame(c("twitter","blogs","news"))
+df<-data.frame(cbind(df,words,lengths,sizes))
+names(df)<-c("data","words","length","sizes")
+
+```
+```{r, echo=FALSE, cache=T, fig.width=5, fig.height=3.5}
+library(ggplot2)
+#bar plot file size
+ggplot(data=df, aes(x=data,y=sizes))+geom_bar(stat="identity",color='grey60',fill='#FFE6FF')+geom_text(aes(label = format(sizes, big.mark=",")), size = 3, vjust=-0.3)+theme_bw() + 
+    xlab('Source')+ylab('File Size (MB)') + theme(legend.position='none')+ ggtitle("File sizes for three datasets") 
+
+#bar plot word counts
+ggplot(data=df, aes(x=data,y=words))+geom_bar(stat="identity",color='grey60',fill='#FFE6FF')+geom_text(aes(label = format(words, big.mark=",")), size = 3, vjust=-0.3)+theme_bw() + 
+    xlab('Source')+ylab('Total Words Count') + theme(legend.position='none')+ ggtitle("Total word count for three datasets")  
+
+#bar plot length
+ggplot(data=df, aes(x=data,y=length))+geom_bar(stat="identity",color='grey60',fill='#FFE6FF')+geom_text(aes(label = format(length, big.mark=",")), size = 3, vjust=-0.3)+theme_bw() +
+    xlab('Source')+ylab('Total Number of Lines') + theme(legend.position='none')+ ggtitle("Total Number of Lines for three datasets") 
+```
+
+
+## Data Preprocessing
+
+The data preprocessing includes process such data cleaning, removal of profanity text and tokenization. The preprocessed data will be saved as .RData files that will be used later. The processed data will be used for building n-grams later. The following are the preprocessing tasks:
+
+- Removal of all illegal characters/emojis/Non-ASCII
+- Sampling of 1% for three datasets
+- Convert text to Lower case
+- Removal of all Numbers
+- Removal of all Punctuations
+- Removal of Whitespace
+- Removal of Profanity words
+- Convert final corpus to plain text document
+
+The preprocessing is mainly performed by using the **tm** (text mining) package. 
+
+```{r, echo=FALSE,cache=T,  warning=FALSE, message=FALSE}
+#to remove illegal characters, emojis and non-ASCII
+cleanedTwitter<- iconv(twitter, 'UTF-8', 'ASCII', "byte")
+cleanedBlogs<- iconv(blogs, 'UTF-8', 'ASCII')
+cleanedNews <- iconv(news, 'UTF-8', 'ASCII')
+
+#sampling of 1% for 3 datasets 
+twitterSample<-sample(cleanedTwitter,round(0.01*length(cleanedTwitter)))
+blogsSample<-sample(cleanedBlogs,round(0.01*length(cleanedBlogs)))
+newsSample<-sample(cleanedNews,round(0.01*length(cleanedNews)))
+corpusSample<-c(blogsSample, newsSample, twitterSample)
+
+
+#Convert to Vector Corpus
+library(tm)
+doc.vec <- VectorSource(twitterSample)  
+doc.corpus <- Corpus(doc.vec)
+#convert to lower case
+doc.corpus<- tm_map(doc.corpus, tolower)
+
+#remove all punctuations
+doc.corpus<- tm_map(doc.corpus, removePunctuation)
+
+#remove all numbers
+doc.corpus<- tm_map(doc.corpus, removeNumbers)
+
+#remove all white spaces
+doc.corpus<- tm_map(doc.corpus, stripWhitespace)
+
+profanity_vector<-readLines(con <- file("./data/profanity.txt"), encoding = "UTF-8", skipNul = TRUE)
+close(con)
+doc.corpus <- tm_map(doc.corpus, removeWords, profanity_vector)  
+
+#convert to plain text document
+doc.corpus<- tm_map(doc.corpus, PlainTextDocument)
+```
+
+
+## Frequency of words and N-grams
+
+Wordcloud for top 300 words
+
+```{r, echo=FALSE, cache=T, warning=FALSE, fig.width=7, fig.height=5, message=FALSE}
+#visualize using wordcloud
+library(wordcloud)
+
+wordcloud(doc.corpus, max.words = 300, random.order = FALSE,rot.per=0.35, use.r.layout=FALSE,colors=brewer.pal(8, "Dark2"))
+
+```
+
+
+Tokenize corpus sample into Unigrams, Bigrams and Trigrams
+
+```{r, message=FALSE,cache=T,  warning=FALSE}
+library(RWeka)
+unigram_token <- function(x)
+  NGramTokenizer(x, Weka_control(min = 1, max = 1))
+bigram_token <- function(x)
+  NGramTokenizer(x, Weka_control(min = 2, max = 2))
+trigram_token <- function(x)
+  NGramTokenizer(x, Weka_control(min = 3, max = 3))
+fourgram_token <- function(x)
+  NGramTokenizer(x, Weka_control(min = 4, max = 4))
+fivegram_token <- function(x)
+  NGramTokenizer(x, Weka_control(min = 5, max = 5))
+
+#finding unigram
+unigram <- TermDocumentMatrix(doc.corpus, control=list(tokenize=unigram_token))
+#finding bigram
+bigram <- TermDocumentMatrix(doc.corpus, control=list(tokenize=bigram_token))
+#finding trigram
+trigram <- TermDocumentMatrix(doc.corpus, control=list(tokenize=trigram_token))
+#finding fourgram
+fourgram <- TermDocumentMatrix(doc.corpus, control=list(tokenize=fourgram_token))
+#finding fivegram
+fivegram <- TermDocumentMatrix(doc.corpus, control=list(tokenize=fivegram_token))
+
+```
+```{r, message=FALSE,cache=T,  warning=FALSE, echo=FALSE, fig.width=6, fig.height=3}
+freqTerms <- findFreqTerms(unigram, lowfreq = 1000)
+termFrequency <- rowSums(as.matrix(unigram[freqTerms,]))
+termFrequency <- data.frame(unigram=names(termFrequency), frequency=termFrequency)
+
+ggplot(termFrequency, aes(x=reorder(unigram, frequency), y=frequency)) +
+    geom_bar(stat = "identity",color='grey60',fill='#FFE6FF') +  coord_flip() +
+    theme(legend.title=element_blank()) +
+    xlab("Unigram") + ylab("Frequency") +
+    labs(title = "Top Unigrams by Frequency")
+
+```
+
+Bar plots showing mhe ost frequently occurring n-grams
+
+```{r, message=FALSE, cache=T, warning=FALSE, echo=FALSE, fig.width=6, fig.height=3}
+freqTerms <- findFreqTerms(bigram, lowfreq = 500)
+termFrequency <- rowSums(as.matrix(bigram[freqTerms,]))
+termFrequency <- data.frame(bigram=names(termFrequency), frequency=termFrequency)
+
+ggplot(termFrequency, aes(x=reorder(bigram, frequency), y=frequency)) +
+    geom_bar(stat = "identity", color='grey60',fill='#FFE6FF') +  coord_flip() +
+    theme(legend.title=element_blank()) +
+    xlab("Bigram") + ylab("Frequency") +
+    labs(title = "Top Bigrams by Frequency")
+
+```
+```{r, message=FALSE, cache=T, warning=FALSE, echo=FALSE, fig.width=6, fig.height=3}
+freqTerms <- findFreqTerms(trigram, lowfreq = 75)
+termFrequency <- rowSums(as.matrix(trigram[freqTerms,]))
+termFrequency <- data.frame(trigram=names(termFrequency), frequency=termFrequency)
+
+ggplot(termFrequency, aes(x=reorder(trigram, frequency), y=frequency)) +
+    geom_bar(stat = "identity" , color='grey60',fill='#FFE6FF') +  coord_flip() +
+    theme(legend.title=element_blank()) +
+    xlab("Trigram") + ylab("Frequency") +
+    labs(title = "Top Trigrams by Frequency")
+
+```
+
+```{r, message=FALSE,cache=T,  warning=FALSE, echo=FALSE, fig.width=6, fig.height=3}
+freqTerms <- findFreqTerms(fourgram, lowfreq = 30)
+termFrequency <- rowSums(as.matrix(fourgram[freqTerms,]))
+termFrequency <- data.frame(fourgram=names(termFrequency), frequency=termFrequency)
+
+ggplot(termFrequency, aes(x=reorder(fourgram, frequency), y=frequency)) +
+    geom_bar(stat = "identity" , color='grey60',fill='#FFE6FF') +  coord_flip() +
+    theme(legend.title=element_blank()) +
+    xlab("Fourgram") + ylab("Frequency") +
+    labs(title = "Top Fourgrams by Frequency")
+
+```
+```{r, message=FALSE,cache=T,  warning=FALSE, echo=FALSE, fig.width=6, fig.height=3}
+freqTerms <- findFreqTerms(fivegram, lowfreq = 5)
+termFrequency <- rowSums(as.matrix(fivegram[freqTerms,]))
+termFrequency <- data.frame(fivegram=names(termFrequency), frequency=termFrequency)
+
+ggplot(termFrequency, aes(x=reorder(fivegram, frequency), y=frequency)) +
+    geom_bar(stat = "identity" , color='grey60',fill='#FFE6FF') +  coord_flip() +
+    theme(legend.title=element_blank()) +
+    xlab("Fivegram") + ylab("Frequency") +
+    labs(title = "Top Fivegrams by Frequency")
+
+```
+
+
+## Algorithm and Data Product
+
+For the data product, the application will be developed and deployed on a **Shiny** server. Using the n-grams, the nearest next word can be predicted. In order to improve the efficiency of the prediction, back-off model will be used.  
+
+The main functionalities of the proposed Shiny app:
+
+- Users will be able to type input to the Shiny app.
+- Based on user's text input, the app will be able to return at least 1 to 3 predicted words and display to the user.

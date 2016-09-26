@@ -1,0 +1,152 @@
+---
+title: "Week6-2_Image Clustering"
+author: "Kyu Cho"
+date: "July 8, 2015"
+output: html_document
+---
+
+```{r cache=TRUE, echo=FALSE}
+library(flexclust)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data6")
+flower = read.csv("flower.csv", header=FALSE)
+healthy = read.csv("healthy.csv", header=FALSE)
+tumor = read.csv("tumor.csv", header=FALSE)
+
+```
+
+# Flower Image
+## Preparing data for Flower Image Clustering
+You must to convert the dataframe into matrix then vector.  
+You can not convert the dataframe into vector right away.  
+```{r cache=TRUE}
+# Change the data type to matrix
+flowerMatrix = as.matrix(flower)
+str(flowerMatrix)
+
+# Original image
+image(flowerMatrix,axes=FALSE, col=grey(seq(0,1,length=256)))
+
+# Turn matrix into a vector to compute the clustering
+flowerVector = as.vector(flowerMatrix)
+str(flowerVector)
+```
+50 pixels in width, 50 pixels in height
+
+## Clustring
+```{r cache=TRUE}
+# Compute distances
+distance = dist(flowerVector, method = "euclidean")
+
+# Hierarchical clustering
+# As a reminder, the Ward's method is a minimum variance method, which tries to find compact and spherical clusters. We can think about it as trying to minimize the variance within each cluster and the distance among clusters.
+clusterIntensity = hclust(distance, method="ward")
+
+plot(clusterIntensity)
+
+# Select 3 clusters
+rect.hclust(clusterIntensity, k = 3, border = "red")
+flowerClusters = cutree(clusterIntensity, k = 3)
+flowerClusters
+
+# Find mean intensity values
+tapply(flowerVector, flowerClusters, mean)
+```
+
+## Outputting imaage
+It requires a matrix form to ouput.
+```{r cache=TRUE}
+# Convert into 50x50 matrix
+dim(flowerClusters) = c(50,50)
+
+# Plot the image and the clusters
+image(flowerClusters, axes = FALSE)
+```
+
+# MRI Image
+## Preparing the data for MRI Image clustring
+```{r cache=TRUE}
+healthyMatrix = as.matrix(healthy)
+str(healthyMatrix)
+
+# Plot image
+image(healthyMatrix, axes=FALSE, col=grey(seq(0,1,length=256)))
+
+# Turn matrix into a vector to compute the clustering
+healthyVector = as.vector(healthyMatrix)
+str(healthyVector)
+```
+
+## Hierarchial clustering 
+```{r cache=TRUE, warning=FALSE, error=TRUE}
+# Compute distances
+distance = dist(healthyVector, method = "euclidean")
+
+# We have an error - why?
+str(healthyVector)
+n <- 365636
+n*(n-1)/2 
+```
+66844659430 comparisons are unreal, we have to use k-mean clustering for this matter.
+
+## k-means
+setting the number of clusters depends on exactly what you're trying to extract from the image.
+```{r cahce=TRUE}
+set.seed(1)
+k = 5
+# Since the k-means is an iterative method that could take very long to converge, we need to set a maximum number of iterations.
+KMC = kmeans(healthyVector, centers = k, iter.max = 1000)
+str(KMC)
+```
+In size variable, the largest cluster is the third one, which has 133,000 values inti, and has 0.0196 intensity value in "centers" variable, which corresponds to the darkest color.
+
+```{r cache=TRUE}
+# Extract clusters
+healthyClusters = KMC$cluster
+
+# Now how can we obtain the mean intensity value within each of our 5 clusters? In hierarchical clustering, we needed to do some manual work, and use the tapply function to extract this information.
+# This should give us the mean intensity value of the second cluster, which is 0.1.
+KMC$centers[2]
+```
+
+## Outputing the image
+It requires a matrix form
+```{r cache=TRUE}
+# Convert into matrix
+dim(healthyClusters) = c(nrow(healthyMatrix), ncol(healthyMatrix))
+
+# Plot the image
+image(healthyClusters, axes = FALSE, col=rainbow(k))
+```
+
+The question now is, can we use the clusters, or the classes, found by our k-means algorithm on the healthy MRI image to identify tumors in another MRI image of a sick patient?
+
+# Tumor Image
+# Preparing the data for tumor MRI Image clustring
+```{r cache=TRUE}
+tumorMatrix = as.matrix(tumor)
+tumorVector = as.vector(tumorMatrix)
+```
+
+Now, we will not run the k-means algorithm again on the tumor vector. Instead, we will apply the k-means clustering results that we found using the healthy brain image on the tumor vector. In other words, we treat the healthy vector as training set and the tumor vector as a testing set. 
+```{r cache=TRUE}
+# Convert the information from the clustering algorithm to an object of the class KCCA.
+KMC.kcca = as.kcca(KMC, healthyVector)
+
+# Prediction
+tumorClusters = predict(KMC.kcca, newdata=tumorVector)
+
+```
+
+## Outputing the image
+```{r cache=TRUE}
+# Convert into matrix
+dim(tumorClusters) = c(nrow(tumorMatrix), ncol(tumorMatrix))
+
+# Plot the image 
+image(tumorClusters, axes = FALSE, col=rainbow(k))
+```
+
+We found the tumor by using the difference of the clustering!
+
+

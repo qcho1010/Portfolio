@@ -1,0 +1,712 @@
+head	1.10;
+access;
+symbols;
+locks; strict;
+comment	@ * @;
+
+
+1.10
+date	2015.09.30.07.05.01;	author o-cho;	state Exp;
+branches;
+next	1.9;
+
+1.9
+date	2015.09.30.06.00.39;	author o-cho;	state Exp;
+branches;
+next	1.8;
+
+1.8
+date	2015.09.29.11.48.19;	author o-cho;	state Exp;
+branches;
+next	1.7;
+
+1.7
+date	2015.09.29.05.00.28;	author o-cho;	state Exp;
+branches;
+next	1.6;
+
+1.6
+date	2015.09.28.11.26.41;	author o-cho;	state Exp;
+branches;
+next	1.5;
+
+1.5
+date	2015.09.27.23.29.41;	author o-cho;	state Exp;
+branches;
+next	1.4;
+
+1.4
+date	2015.09.25.19.43.28;	author o-cho;	state Exp;
+branches;
+next	1.3;
+
+1.3
+date	2015.09.25.05.10.55;	author o-cho;	state Exp;
+branches;
+next	1.2;
+
+1.2
+date	2015.09.23.21.49.28;	author o-cho;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2015.09.23.21.46.15;	author o-cho;	state Exp;
+branches;
+next	;
+
+
+desc
+@display.c
+@
+
+
+1.10
+log
+@Enlarge the board
+@
+text
+@#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <math.h>
+#include "swim_mill.h"
+
+void process (char ShmPTR[23][23], struct Memory *ShmPTR2, int i, int fishORpellet);
+void critical_section_fish (char ShmPTR[23][23], struct Memory *ShmPTR2);
+void critical_section_pellet (char ShmPTR[23][23], struct Memory *ShmPTR2);
+int findPellet(char ShmPTR[23][23], struct Memory *ShmPTR2, int fishX);
+void updatePos(char ShmPTR[23][23], int x, struct Memory *ShmPTR2, int fishX);
+void display(char ShmPTR[23][23]);
+
+struct Data data[20];
+struct Data2 data2;
+
+void process (char ShmPTR[23][23], struct Memory *ShmPTR2, int i, int fishORpellet) {
+	int k, maxIndex, index = 0; // Local to each process 0..n
+	int n = ShmPTR2->n;
+	do {
+		ShmPTR2->flag[i] = 2; // Raise my flag		
+		index  = ShmPTR2->turn;		// Next Turn is selected from previous iteration
+		while (index != i) {		// Check if you are eligible to have "turn" title 
+			if(ShmPTR2->flag[index] != 1) {	// Stay in the loop untill all other flags becomes idle till your 'i' index
+				index = ShmPTR2->turn;		// If they found non-idle flag, reset the index to go though the loop again
+			} else
+				index = (index+1)%n;		// If they found idle flag, move to next flag
+		}
+		ShmPTR2->flag[i] = 3;	// Since all of flag are idle, declear you will be in CS
+
+		for (index=0; index<n; index++)		// But one more time to check whole flag before actually getting in
+			if (index != i && ShmPTR2->flag[index] == 3)		// If they found process in CS, this, do while loop continues
+				break;			// Its important to make sure that non of flags are in CS to avoid the infinite loop
+	} while ((ShmPTR2->turn != i && ShmPTR2->flag[ShmPTR2->turn] != 1 ) || index < n);
+	ShmPTR2->turn = i;		// Declear it's your turn
+
+	if (fishORpellet == 1) {
+		critical_section_fish(ShmPTR, ShmPTR2);
+	} else if (fishORpellet == 0) {
+		critical_section_pellet(ShmPTR, ShmPTR2);
+	}
+
+	index = ((ShmPTR2->turn)+1)%n;		// Move to next index to check if there is any non idle flag
+	while (ShmPTR2->flag[index] == 1) { 	// Just skip idle flag
+		index = (index+1)%n;
+	}	
+	
+	ShmPTR2->turn = index; // Found non idle flag, and store its index to 'turn' for next iteration
+	ShmPTR2->flag[i] = 1; // Make myself idle.
+}
+
+void critical_section_fish (char ShmPTR[23][23], struct Memory *ShmPTR2) {
+	int fishX = ShmPTR2->fishX;
+	if(ShmPTR2->status == 1) {		// go for new pellet
+		ShmPTR2->status = 0;
+		data->pelletX = findPellet(ShmPTR, ShmPTR2, fishX); 		// Find the cloest pelletX
+	}
+	updatePos(ShmPTR, data->pelletX, ShmPTR2, fishX);	//  Change the position
+	
+	display(ShmPTR);	
+}
+
+void critical_section_pellet (char ShmPTR[23][23], struct Memory *ShmPTR2) {
+	int i = 0x80;
+	int pelletX = data2.pelletX;
+	int pelletY = data2.pelletY;
+	
+	if(ShmPTR[pelletY+1][pelletX] == 'P') {		// fish infront of you
+		data2.pelletY++;
+		data2.eatten = 1;
+		ShmPTR2->status = 1;
+		ShmPTR[pelletY][pelletX] = '.';
+	} else if((pelletY+1) == 23) {		// outof bound
+		data2.eatten = 1;
+		ShmPTR[pelletY][pelletX] = '.';
+	} else {			// still moving
+		data2.pelletY++;
+		pelletY++;
+		ShmPTR[pelletY][pelletX] = i;	
+		ShmPTR[pelletY-1][pelletX] = '.';
+	}
+	display(ShmPTR);	
+}
+
+int findPellet(char ShmPTR[23][23], struct Memory *ShmPTR2, int X) {
+	int x,y,j, fishX = X, totalDist;
+	char i = 0x80;	
+	for(y=0; y<23; y++){
+		for(x=0; x<23; x++) {
+			if(ShmPTR[y][x] == i && abs(fishX-x) <= abs(22-y)*2) { 		// Check if the dopped pellet is reachable
+				totalDist = abs(fishX-x)*-1 + abs(22-y)*2 + sqrt(abs(fishX-x)^2+abs(22-y)^2);		// Calculate the pts;
+				for(j=0; j<20; j++) {
+					if(data[j].empty == 0) {
+						data[j].totalDist = totalDist;
+						data[j].pelletX = x;
+						data[j].empty = 1;
+						break;
+					}
+				}	
+			}
+		}
+	}
+	
+	int min, pelletX = 11, index = 0;
+	min = data[0].totalDist;
+	j = 0;
+	while (data[j].empty == 1 && j < 20) {
+		if (data[j+1].totalDist < min) {
+			min = data[j+1].totalDist;	
+			pelletX = data[j].pelletX;
+			index = j;
+		}
+		data[j].totalDist = 0;
+		data[j].pelletX = 0;		
+		data[j].empty = 0;	
+		j++;
+	}
+	return pelletX;
+}
+
+void updatePos(char ShmPTR[23][23], int x, struct Memory *ShmPTR2, int X) {
+	int j, fishX = X;
+	char i = 0x80;
+	// Obtain fishX
+
+	if (fishX != x) { 		//and pellet isn't eatten;
+		ShmPTR[22][fishX] = '.';	
+		if (fishX < x) {
+			fishX++;
+			ShmPTR2->fishX++;
+		}	else {
+			fishX--;
+			ShmPTR2->fishX--;
+		}
+	}
+		ShmPTR[22][fishX] = 'P';	
+}
+
+void display(char ShmPTR[23][23]) {
+	system("clear");
+	int x, y;
+	for (y=0; y<23; y++) {
+		for (x=0; x<23; x++) {
+			printf("%c ", ShmPTR[y][x]);
+		}
+		printf("\n");
+	}	
+	printf("\n");
+}
+@
+
+
+1.9
+log
+@Solve the dead lock problem
+@
+text
+@a12 1
+
+d15 6
+a20 8
+void process (char ShmPTR[11][11], struct Memory *ShmPTR2, int i, int fishORpellet);
+void critical_section_fish (char ShmPTR[11][11], struct Memory *ShmPTR2);
+void critical_section_pellet (char ShmPTR[11][11], struct Memory *ShmPTR2);
+int findPellet(char ShmPTR[11][11], struct Memory *ShmPTR2, int fishX);
+void updatePos(char ShmPTR[11][11], int x, struct Memory *ShmPTR2, int fishX);
+void display(char ShmPTR[11][11]);
+
+
+d25 1
+a25 1
+void process (char ShmPTR[11][11], struct Memory *ShmPTR2, int i, int fishORpellet) {
+a31 2
+		// printf("i: %d, nTotal: %d, index: %d,  flag[index] : %d\n", i, ShmPTR2->nTotal , index, ShmPTR2->flag[index]);
+		// usleep(1000000/3);
+a43 1
+	// printf("2: %d, nTotal: %d, index: %d,  flag[index] : %d\n", i, ShmPTR2->nTotal , index, ShmPTR2->flag[index]);
+a57 2
+	
+	// printf("3: %d, nTotal: %d, index: %d,  flag[index] : %d\n", i, ShmPTR2->nTotal , index, ShmPTR2->flag[index]);
+d60 1
+a60 1
+void critical_section_fish (char ShmPTR[11][11], struct Memory *ShmPTR2) {
+d71 1
+a71 1
+void critical_section_pellet (char ShmPTR[11][11], struct Memory *ShmPTR2) {
+d81 1
+a81 1
+	} else if((pelletY+1) == 11) {		// outof bound
+d93 1
+a93 2
+
+int findPellet(char ShmPTR[11][11], struct Memory *ShmPTR2, int X) {
+d96 4
+a99 4
+	for(y=0; y<11; y++){
+		for(x=0; x<11; x++) {
+			if(ShmPTR[y][x] == i && abs(fishX-x) <= abs(10-y)*2) { 		// Check if the dopped pellet is reachable
+				totalDist = abs(fishX-x)*-1 + abs(10-y)*2 + sqrt(abs(fishX-x)^2+abs(10-y)^2);		// Calculate the pts;
+d112 1
+a112 1
+	int min, pelletX = 5, index = 0;
+a115 1
+		// printf("Index %d, Min: %d, Current: %d, X: %d\n", j, min, data[j].totalDist, data[j].pelletX);
+a119 1
+			// printf("Min changed,  Index: %d, value: %d\n", index, min);
+d129 1
+a129 1
+void updatePos(char ShmPTR[11][11], int x, struct Memory *ShmPTR2, int X) {
+d135 1
+a135 1
+		ShmPTR[10][fishX] = '.';	
+d144 1
+a144 1
+		ShmPTR[10][fishX] = 'P';	
+d147 1
+a147 2
+
+void display(char ShmPTR[11][11]) {
+d150 2
+a151 2
+	for (y=0; y<11; y++) {
+		for (x=0; x<11; x++) {
+@
+
+
+1.8
+log
+@Fixed lagging
+@
+text
+@d6 5
+d19 1
+a19 1
+int findPellet(char ShmPTR[11][11], int fishX);
+d23 2
+d29 1
+a29 1
+	int index = 0; // Local to each process 0..n
+d32 1
+a32 1
+		ShmPTR2->flag[index] = 2; // Raise my flag		
+d35 2
+d49 1
+d64 2
+a65 1
+	// remainder_section();
+d72 1
+a72 1
+		data->pelletX = findPellet(ShmPTR, fishX); 		// Find the cloest pelletX
+d83 2
+a84 2
+	if((pelletY+1) == 11 || ShmPTR[pelletY+1][pelletX] == 'P') {
+		ShmPTR[pelletY][pelletX] = '.';
+a87 1
+	} else {
+d89 4
+d96 1
+d101 2
+a102 1
+int findPellet(char ShmPTR[11][11], int X) {
+a104 1
+	
+d117 1
+a117 1
+			} 
+d154 1
+a155 3
+	} else {
+		ShmPTR2->status = 2;
+	}
+d169 1
+a169 1
+}@
+
+
+1.7
+log
+@final
+@
+text
+@a29 1
+				sleep(1);
+a59 1
+		// printf("fish(%d) New pellet dictected!\n", getpid());
+a61 8
+		// printf("New pellet X %d", data->pelletX);
+		updatePos(ShmPTR, data->pelletX, ShmPTR2, fishX);	//  Change the position
+			
+	} else if (ShmPTR2->status == 0) {		// Still moving
+		updatePos(ShmPTR, data->pelletX,ShmPTR2, fishX);	//  Change the position
+		// printf("fish(%d) Moving to new position!\n", getpid());
+	} else if (ShmPTR2->status == 2) { 		// If fish is alligned with pellet
+		// printf("fish(%d) waiting till it comes to me!\n", getpid());
+d63 1
+a85 2
+// && abs(fishX-x) <= abs(10-y)*2
+
+d92 1
+a92 1
+			if(ShmPTR[y][x] == i ) { 		// Check if the dopped pellet is reachable
+@
+
+
+1.6
+log
+@Added solution 4 cretical section
+@
+text
+@d8 1
+d14 2
+a15 2
+int findPellet(char ShmPTR[11][11]);
+void updatePos(char ShmPTR[11][11], int x, struct Memory *ShmPTR2);
+a27 1
+			printf("0pid(%d): i:%d   Index: %d   flag[Index]: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+a38 1
+		printf("1pid(%d): i:%d   Index: %d   flag[Index]: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+a49 1
+		printf("3pid(%d): i:%d   Index: %d   flag[Index]: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+d59 3
+a61 1
+	if(ShmPTR2->status == 1) {
+d63 9
+a71 6
+		data->pelletX = findPellet(ShmPTR); 		// Find the cloest pelletX
+		updatePos(ShmPTR, data->pelletX, ShmPTR2);	//  Change the position
+	} else if (ShmPTR2->status == 0) {	// still moving
+		updatePos(ShmPTR, data->pelletX,ShmPTR2);	//  Change the position
+	} else if (ShmPTR2->status == 2) { 		// aligned
+		display(ShmPTR);	
+d73 2
+d81 1
+a81 1
+	if(ShmPTR[pelletY+1][pelletX] == 'P') {
+a82 1
+		display(ShmPTR);
+d84 2
+a85 2
+		display(ShmPTR);	
+		data2.status == 4; 
+d90 1
+a90 2
+		ShmPTR[pelletY][pelletX] = ShmPTR[pelletY][pelletX]^i;	
+		display(ShmPTR);	
+d92 1
+d95 1
+d97 2
+a98 2
+int findPellet(char ShmPTR[11][11]) {
+	int x,y,j, fishX, totalDist;
+d100 1
+d103 1
+a103 3
+			if(ShmPTR[10][x] == 'P')		// Obtain fishX
+				fishX = x;
+			if(ShmPTR[y][x] == i && abs(fishX-x) <= abs(10-y)*2) { 		// Check if the dopped pellet is reachable
+d113 1
+a113 3
+			} else {
+				return 0;
+			}
+a132 1
+	// printf("Final : Index %d, X: %d\n", index, pelletX);
+d136 2
+a137 2
+void updatePos(char ShmPTR[11][11], int x, struct Memory *ShmPTR2) {
+	int j, fishX;
+d140 1
+a140 8
+	for(j=0; j<11; j++) {
+		if(ShmPTR[10][j] == 'P') {
+			fishX = j;
+			break;
+		}
+	}
+	printf("fishX: %x,  x: %d\n", fishX , x);
+	ShmPTR[10][fishX] = '.';	
+d142 2
+a143 1
+		if (fishX < x)
+d145 2
+a146 1
+		else
+d148 4
+a151 2
+	} else if (fishX == x) {
+		printf("alined! \n");
+a153 2
+	ShmPTR[10][fishX] = 'P';	
+	display(ShmPTR);	
+@
+
+
+1.5
+log
+@Added process funtion
+Big optimization for loop iteration
+@
+text
+@d10 23
+a32 6
+void display(char ShmPTR[11][11]) {
+	// system("clear");
+	int x, y;
+	for (y=0; y<11; y++) {
+		for (x=0; x<11; x++) {
+			printf("%c ", ShmPTR[y][x]);
+d34 19
+a52 1
+		printf("\n");
+d54 35
+a88 1
+	printf("\n");
+d91 2
+a92 1
+int findPellet(char ShmPTR[11][11], struct Data data[20]) {
+a94 1
+	// display(ShmPTR);
+d109 3
+a111 1
+			} 
+d115 1
+a115 1
+	int min, pelletX, index = 0;
+d145 1
+a145 1
+
+d152 3
+a154 4
+		ShmPTR[10][fishX] = 'P';	
+		display(ShmPTR);	
+	} else {
+		exit(2);
+d156 2
+a157 3
+	// } else if(ShmPTR[9][fishX] = i){
+		// ShmPTR2->status = 3;
+	// }// obtaining process
+d160 7
+a166 14
+void process (struct Memory * ShmPTR2, int i) {
+	int index = 0; // Local to each process 0..n
+	// printf("1pid(%d): i:%d   Index: %d   flag: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[i], ShmPTR2->turn);
+	int n = ShmPTR2->n;
+	do {
+		ShmPTR2->flag[index] = 2; // Raise my flag		
+		index  = ShmPTR2->turn;		// Next Turn is selected from previous iteration
+		while (index != i) {		// Check if you are eligible to have "turn" title 
+			if(ShmPTR2->flag[index] != 1) {	// Stay in the loop untill all other flags becomes idle till your 'i' index
+				// printf("2pid(%d): i:%d   Index: %d   flag: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+				index = ShmPTR2->turn;		// If they found non-idle flag, reset the index to go though the loop again
+				sleep(1);
+			} else
+				index = (index+1)%n;		// If they found idle flag, move to next flag
+d168 1
+a168 16
+		ShmPTR2->flag[i] = 3;	// Since all of flag are idle, declear you will be in CS
+
+		for (index=0; index<n; index++)		// But one more time to check whole flag before actually getting in
+			if (index != i && ShmPTR2->flag[index] == 3)		// If they found process in CS, this, do while loop continues
+				break;			// Its important to make sure that non of flags are in CS to avoid the infinite loop
+	} while ((ShmPTR2->turn != i && ShmPTR2->flag[ShmPTR2->turn] != 1 ) || index < n);
+	// printf("3pid(%d): i:%d   Index: %d   flag: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+	ShmPTR2->turn = i;		// Declear it's your turn
+
+	critical_section();
+
+	index = ((ShmPTR2->turn)+1)%n;		// Move to next index to check if there is any non idle flag
+	// printf("4pid(%d): i:%d   Index: %d   next flag: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+	while (ShmPTR2->flag[index] == 1) { 	// Just skip idle flag
+		// printf("5pid(%d): i:%d   Index: %d   next flag: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+		index = (index+1)%n;
+d170 1
+a170 9
+	
+	ShmPTR2->turn = index; // Found non idle flag, and store its index to 'turn' for next iteration
+	ShmPTR2->flag[i] = 1; // Make myself idle.
+	// printf("6pid(%d): i:%d   Index: %d   flag: %d   turn: %d\n", getpid(), i, index, ShmPTR2->flag[index], ShmPTR2->turn);
+	// remainder_section();
+}
+
+void critical_section () {
+	printf("I'm doing serious works!\n", getpid());
+@
+
+
+1.4
+log
+@Tested sharing the distance values between proceeses
+@
+text
+@d1 2
+a2 2
+#include <sys/types.h>  //key_t
+#include <sys/ipc.h> 
+d7 1
+a7 2
+#include <time.h>
+#include <string.h>
+d11 4
+a14 3
+	int rows = 11, cols = 11, x, y, k = 0;
+	for (y=0; y<rows; y++) {
+		for (x=0; x<cols; x++) {
+d19 1
+d22 21
+a42 5
+void drop(char ShmPTR[11][11], int *ShmPTR2) {
+	srand(time(0));
+	char i = 0x80;
+	int pPosX, pPosY;
+	char YX[20], X[20], Y[20];
+d44 15
+a58 32
+	// char *YX, *X, *Y;
+	// YX = (char*)malloc(sizeof(char)*10);
+	// X = (char*)malloc(sizeof(char)*10);
+	// Y = (char*)malloc(sizeof(char)*10);	
+	// memset(X, 0, sizeof(X));
+	// memset(Y, 0, sizeof(Y));
+	
+	pPosX = rand() % 11; //generate 0~10
+	pPosY = rand() % 11;
+	sprintf(X, "%d", pPosX);
+	sprintf(Y, "%d", pPosY);
+	
+	if (strlen(X) == 1 && strlen(Y) == 1) {
+		strcat(YX, "1");
+		strcat(YX, "0");
+		strcat(YX, Y);
+		strcat(YX, "0");
+		strcat(YX, X);
+	} else if (strlen(X) == 1 && strlen(Y) == 2) {
+		strcat(YX, "1");
+		strcat(YX, Y);
+		strcat(YX, "0");
+		strcat(YX, X);		
+	} else if (strlen(X) == 2 && strlen(Y) == 1) {
+		strcat(YX, "1");
+		strcat(YX, "0");
+		strcat(YX, Y);
+		strcat(YX, X);		
+	} else if (strlen(X) == 2 && strlen(Y) == 2) {
+		strcat(YX, "1");
+		strcat(YX, Y);
+		strcat(YX, X);		
+d60 11
+a70 6
+	printf("CoordinateXY %d\n", atoi(YX));
+	
+	int j;
+	for(j=0; j<20; j++) {
+		if(ShmPTR2[j] == NULL) {
+			ShmPTR2[j] = atoi(YX);
+d74 15
+a88 4
+	
+	ShmPTR[pPosY][pPosX] = i;
+	// system("clear");
+	display(ShmPTR);
+d91 14
+a104 8
+void calcDist(int *ShmPTR2) {
+	int i, YX, X, Y;
+	char YX2[20], X2[20], Y2[20];
+
+	for(i=0; i<20; i++) {
+		if(ShmPTR2[i] != NULL) {
+			printf("YX : %d\n",ShmPTR2[i]);
+			YX = ShmPTR2[i];
+d106 17
+a122 2
+	}
+	sprintf(YX2, "%d", YX);
+d124 4
+a127 6
+	Y2[0] = YX2[1];
+	Y2[1] = YX2[2];
+	X2[0] = YX2[3];
+	X2[1] = YX2[4];
+	printf("CoordinateXY %d%d\n", atoi(Y2),atoi(X2));
+
+d130 2
+a131 4
+void fishPos(char ShmPTR[11][11]) {
+	ShmPTR[10][5] = 'P';
+	system("clear");
+	display(ShmPTR);	
+@
+
+
+1.3
+log
+@Added calcDist()
+Added fishPosition()
+Added the function to store the position
+@
+text
+@d25 1
+a25 4
+	char *YX, *X, *Y;
+	YX = (char*)malloc(sizeof(char)*10);
+	X = (char*)malloc(sizeof(char)*10);
+	Y = (char*)malloc(sizeof(char)*10);
+d27 4
+d33 1
+d76 3
+a78 1
+	int i;
+d82 1
+d85 8
+@
+
+
+1.2
+log
+@added display function
+@
+text
+@d7 2
+a8 1
+#include <errno.h> //errno
+a12 1
+
+d19 67
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d1 19
+@

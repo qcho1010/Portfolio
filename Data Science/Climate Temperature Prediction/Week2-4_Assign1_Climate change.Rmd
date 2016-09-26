@@ -1,0 +1,79 @@
+---
+title: "Week2-4_Assign1_Climate change"
+author: "Kyu Cho"
+date: "Wednesday, June 17, 2015"
+output: html_document
+---
+#Introduction
+There have been many studies documenting that the average global temperature has been increasing over the last century. The consequences of a continued rise in global temperature will be dire. Rising sea levels and an increased frequency of extreme weather events will affect billions of people.  
+
+In this problem, we will attempt to study the relationship between average global temperature and several other factors.  
+
+#Variables
+ - Year: the observation year.
+ - Month: the observation month.
+ - Temp: the difference in degrees Celsius between the average global temperature in that period and a reference value. This data comes from the Climatic Research Unit at the University of East Anglia.
+ - CO2, N2O, CH4, CFC.11, CFC.12: atmospheric concentrations of carbon dioxide (CO2), nitrous oxide (N2O), methane  (CH4), trichlorofluoromethane (CCl3F; commonly referred to as CFC-11) and dichlorodifluoromethane (CCl2F2; commonly referred to as CFC-12), respectively. This data comes from the ESRL/NOAA Global Monitoring Division.  
+CO2, N2O and CH4 are expressed in ppmv (parts per million by volume  -- i.e., 397 ppmv of CO2 means that CO2 constitutes 397 millionths of the total volume of the atmosphere)
+CFC.11 and CFC.12 are expressed in ppbv (parts per billion by volume).   
+ - Aerosols: the mean stratospheric aerosol optical depth at 550 nm. This variable is linked to volcanoes, as volcanic eruptions result in new particles being added to the atmosphere, which affect how much of the sun's energy is reflected back into space. This data is from the Godard Institute for Space Studies at NASA.
+ - TSI: the total solar irradiance (TSI) in W/m2 (the rate at which the sun's energy is deposited per unit area). Due to sunspots and other solar phenomena, the amount of energy that is given off by the sun varies substantially with time. This data is from the SOLARIS-HEPPA project website.
+ - MEI: multivariate El Nino Southern Oscillation index (MEI), a measure of the strength of the El Nino/La Nina-Southern Oscillation (a weather effect in the Pacific Ocean that affects global temperatures). This data comes from the ESRL/NOAA Physical Sciences Division.
+  
+
+```{r cache=TRUE}
+setwd("D:/Google Drive/College/4-The Analytics Edge/data2")
+climate = read.csv("climate_change.csv")
+str(climate)
+```
+
+#CREATING OUR FIRST MODEL
+```{r cache=TRUE}
+# Subsetting the observation
+train = subset(climate, climate$Year <= 2006)
+test = subset(climate, climate$Year > 2006)
+
+# Next, build a linear regression model to predict the dependent variable Temp, using MEI, CO2, CH4, N2O, CFC.11, CFC.12, TSI, and Aerosols as independent variables (Year and Month should NOT be used in the model). Use the training set to build the model.
+model1 = lm(Temp ~ . - Year - Month, data = train)
+summary(model1)
+```
+
+#UNDERSTANDING THE MODEL
+Current scientific opinion is that nitrous oxide and CFC-11 are greenhouse gases: gases that are able to trap heat from the sun and contribute to the heating of the Earth. However, the regression coefficients of both the N2O and CFC-11 variables are negative, indicating that increasing atmospheric concentrations of either of these two compounds is associated with lower global temperatures.  
+All of the gas concentration variables reflect human development - N2O and CFC.11 are correlated with other variables in the data set.  
+
+Compute the correlations between all the variables in the training set. Which of the following independent variables is N2O highly correlated with (absolute correlation greater than 0.7)?  
+Which of the following independent variables is CFC.11 highly correlated with?  
+```{r cache=TRUE}
+cor(train)
+```
+CO2, CH4, CFC.12 are highly correlated with N20  
+CH2, CFC.12 are highly correlated with CFC.11
+
+#SIMPLIFYING THE MODEL
+```{r cache=TRUE}
+model2 = lm(Temp ~ MEI + TSI + Aerosols + N2O, data = train)
+summary(model2)
+```
+
+#AUTOMATICALLY BUILDING THE MODEL
+```{r cache=TRUE}
+model3 <- step(model1)
+summary(model3)
+```
+
+#TESTING ON UNSEEN DATA
+```{r cache=TRUE}
+predicted <- predict(model3, newdata=test)
+SSE = sum((predicted - test$Temp)^2)
+SST = sum((mean(train$Temp) - test$Temp)^2)
+R2 = 1 - SSE/SST
+RMSE = sqrt(SSE/nrow(test))
+
+predicted
+SSE
+SST
+R2
+RMSE
+```
+

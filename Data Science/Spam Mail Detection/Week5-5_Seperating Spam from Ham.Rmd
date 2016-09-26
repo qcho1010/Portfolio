@@ -1,0 +1,194 @@
+---
+title: "Week5-5_SEPARATING SPAM FROM HAM"
+author: "Kyu Cho"
+date: "July 4, 2015"
+output: html_document
+---
+# Introduction
+Nearly every email user has at some point encountered a "spam" email, which is an unsolicited message often advertising a product, containing links to malware, or attempting to scam the recipient. Roughly 80-90% of more than 100 billion emails sent each day are spam emails, most being sent from botnets of malware-infected computers. The remainder of emails are called "ham" emails.  
+
+As a result of the huge number of spam emails being sent across the Internet each day, most email providers offer a spam filter that automatically flags likely spam messages and separates them from the ham. Though these filters use a number of techniques (e.g. looking up the sender in a so-called "Blackhole List" that contains IP addresses of likely spammers), most rely heavily on the analysis of the contents of an email via text analytics.  
+
+In this homework problem, we will build and evaluate a spam filter using a publicly available dataset first described in the 2006 conference paper "Spam Filtering with Naive Bayes -- Which Naive Bayes?" by V. Metsis, I. Androutsopoulos, and G. Paliouras. The "ham" messages in this dataset come from the inbox of former Enron Managing Director for Research Vincent Kaminski, one of the inboxes in the Enron Corpus. One source of spam messages in this dataset is the SpamAssassin corpus, which contains hand-labeled spam messages contributed by Internet users. The remaining spam was collected by Project Honey Pot, a project that collects spam messages and identifies spammers by publishing email address that humans would know not to contact but that bots might target with spam. The full dataset we will use was constructed as roughly a 75/25 mix of the ham and spam messages.  
+
+# Variables
+- text: The text of the email.
+- spam: A binary variable indicating if the email was spam.
+
+```{r cache=TRUE}
+library(caTools)
+library(tm)
+library(SnowballC)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(ROCR)
+
+setwd("D:/Google Drive/College/4-The Analytics Edge/data5")
+
+# stringsAsFactors false for working on a text analytics to read in properly.
+emails = read.csv("emails.csv", stringsAsFactors = FALSE)
+summary(emails)
+str(emails)
+```
+
+# Loading the dataset
+```{r cahce=TRUE}
+nrow(emails)
+sum(emails$spam==TRUE)
+strwrap(emails$text[1])
+
+# Find the first word for every email
+emails$text[1] 
+emails$text[2]
+
+# Find the longest email
+max(nchar(emails$text))
+
+# Find the shorted email
+which.min(nchar(emails$text))
+```
+
+# Cleaning the data
+```{r cache=TRUE}
+corpus = Corpus(VectorSource(emails$text))
+corpus = tm_map(corpus, tolower)
+corpus = tm_map(corpus, PlainTextDocument)
+corpus = tm_map(corpus, removePunctuation)
+corpus = tm_map(corpus, removeWords, stopwords("english"))
+corpus = tm_map(corpus, stemDocument)
+```
+
+## Removing SpareTerms
+```{r cache=TRUE}
+# Create Matrix
+mEmail = DocumentTermMatrix(corpus)
+
+# Filtering
+mEmail = removeSparseTerms(mEmail, .95)
+
+# Convert into data frame
+dfEmail = as.data.frame(as.matrix(mEmail))
+colnames(dfEmail) = make.names(colnames(dfEmail), unique=T)
+
+# Find the most frequent words
+which.max(colSums(dfEmail))
+
+# Add variable
+dfEmail$spam = emails$spam
+
+# Check the frequent words that appears minimum of 5000 times.
+findFreqTerms(mEmail, lowfreq=5000)
+```
+
+# Building Model
+## Split data
+```{r cache=TRUE}
+dfEmail$spam = as.factor(dfEmail$spam)
+
+set.seed(123)
+split = sample.split(dfEmail$spam, SplitRatio=.7)
+train = subset(dfEmail, split=TRUE)
+test = subset(dfEmail, split=FALSE)
+```
+
+```{r cache=TRUE}
+# Build Logistic Regression Model
+modelLR = glm(spam~., data=train, family=binomial)
+
+# Build CART Model
+modelCART = rpart(spam~., data=train, method="class")
+
+# Build Randome Forest Model
+set.seed(123)
+modelRF = randomForest(spam~., data=train, method="class")
+```
+
+# Evaluation on training set
+## LRM 
+```{r cache=TRUE}
+# Accuracy for LGM using the training set
+pred = predict(modelLR, type="response")
+table = table(train$spam, pred >= 0.5)
+(table[1,1] + table[2,2]) / sum(table)
+
+# AUC
+predROCR = prediction(pred, train$spam)
+perfROCR = performance(predROCR, "tpr", "fpr")
+plot(perfROCR, colorize=TRUE)
+performance(predROCR, "auc")@y.values
+```
+
+## CART
+```{r cache=TRUE}
+# Accuracy for CART using the training set
+prp(modelCART)
+predTrain <- predict(modelCART)[,2]
+tCART <- table(train$spam, predTrain >= 0.5)
+(tCART[1,1] + tCART[2,2])/(sum(tCART))
+
+# AUC of the CART model
+predROCRCART = prediction(predTrain, train$spam)
+perfROCRCART = performance(predROCRCART, "tpr", "fpr")
+performance(predROCRCART, "auc")@y.values
+```
+
+## RF
+```{r cache=TRUE}
+# Accuracy of RF Model
+predRF <- predict(modelRF, type="prob")[,2]
+tRF <- table(train$spam, predRF >= 0.5)
+(tRF[1,1] + tRF[2,2])/(sum(tRF))
+
+# Performance of RF Model
+predROCRRF = prediction(predRF, train$spam)
+performance(predROCRRF, "auc")@y.values
+```
+
+# Evaluation on testing set
+## LRM
+```{r cache=TRUE}
+# Accuracy of LRM moredl
+predTestLog <- predict(modelLR, newdata=test, type="response")
+t2 <- table(test$spam, predTestLog >= 0.5)
+(t2[1,1] + t2[2,2])/(sum(t2))
+
+# Performance of LRM Model
+predROCRLog = prediction(predTestLog, test$spam)
+performance(predROCRLog, "auc")@y.values
+```
+
+## CART
+```{r cache=TRUE}
+# Accuracy of CART model
+predTestCART <- predict(modelCART, newdata=test)[,2]
+t3 <- table(test$spam, predTestCART >= 0.5)
+(t3[1,1] + t3[2,2])/(sum(t3))
+
+# Performance of CART Model
+predROCRCART = prediction(predTestCART, test$spam)
+performance(predROCRCART, "auc")@y.values
+```
+
+## RF
+```{r cache=TRUE}
+# Accuracy of RF Model
+pred2RF <- predict(modelRF, type="prob")[,2]
+t2RF <- table(train$spam, pred2RF >= 0.5)
+(t2RF[1,1] + t2RF[2,2])/(sum(t2RF))
+
+# Performance of RF Model
+predROCR2RF = prediction(pred2RF, train$spam)
+performance(predROCR2RF, "auc")@y.values
+```
+
+
+
+
+
+
+
+
+
+
+
