@@ -1,0 +1,15 @@
+Hadoop Pig1
+Hadoop Pig2
+Log Analysis
+Movie Raiting Prediction
+Power Output Prediction
+Principle Component Analysis
+Simple Mapduce Program
+Song Year Using Audio Frequency  Prediction
+Text Analysis
+Word Count using pySpark MapReduce
+Word Count using RDD
+Work Count using Spark SQL
+mylist.txt
+t.txt
+text.txt

@@ -1,0 +1,7 @@
+KNN Regression
+Lasso Regression
+Linear Regression
+Multivariate Regression
+Polynomial Regression
+Ridge Regression
+filelist.txt

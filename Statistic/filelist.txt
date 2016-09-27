@@ -1,0 +1,12 @@
+Crime Location Inference
+Demographics v. Employment Inference
+Health Score Statistical Inference
+Income Group v. Policial Party Inference
+Internet Privacy Inference
+Movie Score and Baysian Model
+Movie Score and Linear Model
+MPG Inference
+Stock Dynamics Inference
+ToothGrowth Inference
+Weather Event Inference
+filelist.txt
