@@ -3,10 +3,10 @@
 |:----------------:|:----------:|:--------:|:--------:|:--------:|:---------------------------:|
 | Virtual Compiler |      -     |     -    |    C++   | Complier | Univ. of Missouri-St. Louis |
 
-P0 (Tree Traversals)
-P1 (Scanner Implementation and testing)
-P2 (Parser Implementation and testing using Scanner)
-P3 (Full LAN to ASM compiler)
+P0 (Tree Traversals)  
+P1 (Scanner Implementation and testing)  
+P2 (Parser Implementation and testing using Scanner)  
+P3 (Full LAN to ASM compiler)  
 
 Invocation: 
 ```
