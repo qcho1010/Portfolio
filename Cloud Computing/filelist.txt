@@ -10,6 +10,4 @@ Text Analysis
 Word Count using pySpark MapReduce
 Word Count using RDD
 Work Count using Spark SQL
-mylist.txt
-t.txt
 text.txt
