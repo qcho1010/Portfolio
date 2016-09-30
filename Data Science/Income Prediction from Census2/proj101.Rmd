@@ -1,0 +1,673 @@
+---
+title: "Project101"
+author: "Kyu Cho"
+date: "September 29, 2016"
+output: html_document
+---
+# Introduction
+The United States government periodically collects demographic information by conducting a census.
+
+In this problem, we are going to use census information about an individual to predict how much a person earns -- in particular, whether the person earns more than $50,000 per year. This data comes from the UCI Machine Learning Repository.
+
+# Variables
+- age = the age of the individual in years
+- workclass = the classification of the individual's working status (does the person work for the federal government, work for the local government, work without pay, and so on)
+- education = the level of education of the individual (e.g., 5th-6th grade, high school graduate, PhD, so on)
+- maritalstatus = the marital status of the individual
+- occupation = the type of work the individual does (e.g., administrative/clerical work, farming/fishing, sales and so on)
+- relationship = relationship of individual to his/her household
+- race = the individual's race
+- sex = the individual's sex
+- capitalgain = the capital gains of the individual in 1994 (from selling an asset such as a stock or bond for more than the original purchase price)
+- capitalloss = the capital losses of the individual in 1994 (from selling an asset such as a stock or bond for less than the original purchase price)
+- hoursperweek = the number of hours the individual works per week
+- nativecountry = the native country of the individual
+- over50k = whether or not the individual earned more than $50,000 in 1994
+
+# Table of Contents
+1. Problem Statement & Hypothesis Generation (skiped)
+2. Data Exploration
+3. Data Cleaning
+     + Missing Value Imputation
+4. Data Manipulation a.k.a Feature Engineering
+5. Machine Learning
+     + Imbalanced Techniques
+          + Oversampling
+          + Undersampling
+          + SMOTE
+     + naive Bayes
+     + XgBoost
+          + Top 20 Features
+          + AUC Threshold
+     + SVM
+          + Class weights
+          
+
+# Data Exploration
+```{r include=FALSE, cahce=T}
+# Set working directory
+path <- "F:/Google Drive/new_proj/project 101"
+# path <- "C:/Users/Kyu/Google Drive/new_proj/project 101"
+setwd(path)
+
+# Load Data and clean the missing data label
+library(data.table)
+train <- fread("train.csv", na.strings = c("", " ", "?", "NA", NA))
+test <- fread("test.csv", na.strings = c("", " ", "?", "NA", NA))
+```
+
+```{r cahce=T}
+# Look at data
+dim(train)
+str (train)
+
+# Check first few rows of train & test
+head(train)
+
+# Check target variables
+unique(train$income_level)
+unique(test$income_level)
+```
+Outputs are not the same, need to encode them correctly.  
+
+```{r cache=T}
+train[ ,income_level := ifelse(income_level == "-50000", 0, 1)]
+test[ ,income_level := ifelse(income_level == "-50000", 0, 1)]
+
+# checking the severity of imbalanced classes
+round(prop.table(table(train$income_level))*100)
+```
+The majority class has a proportion of 94%. In other words, with a decent ML algorithm, our model would get 94% model accuracy. In absolute figures, it looks incredible. But, our performance would depend on, how good can we predict the minority classes.
+
+## Changing Variable Types
+```{r cache=T}
+# Converting variables into categorical and numerical
+cat_cols <- c(2:5, 7, 8:16, 20:29, 31:38, 40,41)
+num_cols <- setdiff(1:40, cat_cols) # Numeric columns are everything else
+
+train[ ,(cat_cols) := lapply(.SD, factor), .SDcols=cat_cols]
+train[ ,(num_cols) := lapply(.SD, as.numeric), .SDcols=num_cols]
+test[ ,(cat_cols) := lapply(.SD, factor), .SDcols=cat_cols]
+test[ ,(num_cols) := lapply(.SD, as.numeric), .SDcols=num_cols]
+
+# Seperate Categorical and Numrical Values
+cat_train <- train[ ,cat_cols, with=FALSE]
+cat_test <- test[,cat_cols, with=FALSE]
+
+num_train <- train[,num_cols, with=FALSE]
+num_test <- test[,num_cols, with=FALSE]
+rm(train, test) # remove original files to save the memory
+```
+
+## Visualization
+### Numberical and Density 
+```{r cache=T, warning=F}
+library(ggplot2)
+library(plotly)
+
+# plot function
+tr <- function(a){
+     ggplot(data = num_train, aes(x= a, y=..density..)) + 
+          geom_histogram(fill="blue",color="red",alpha = 0.5,bins =100) + 
+          geom_density()
+     ggplotly()}
+
+# variable age
+tr(num_train$age)
+```
+
+1. The data set consists of people aged from 0 to 90 with frequency of people declining with age.
+2. Population below age 20 couldn't earn > 50K under normal circumstances.
+     + bin this variable into age groups.
+
+```{r cache=T}
+# variable capital_losses
+tr(num_train$capital_losses)
+```
+
+1. In skewed distribution, normalizing is always an option. 
+2. But, we need to look into this variable deeper as this insight isn't significant enough for decision making. 
+     + One option could be, to check for unique values. If they are less, we can tabulate the distribution.  
+3. More todo
+     + Plot all other numerical variables as well
+     
+### Numerical vs Categorical
+Since, it's classification problem, plot numerical variables with dependent variable to find some cluster
+
+```{r cache=T}
+# add target value
+num_train[ ,income_level := cat_train$income_level]
+
+# create a scatter plot
+ggplot(data=num_train, aes(x=age, y=wage_per_hour)) +
+     geom_point(aes(colour=income_level)) +
+     scale_y_continuous("wage per hour", breaks = seq(0, 10000, 1000))
+
+```
+
+1. Most of the people having income_level 1.
+2. Most of the people fall in the age of 25-65 earning wage of $1000 to $4000 per hour. 
+This plot further strengthens our assumption that age < 20 would have income_level 0, hence we will bin this variable.
+3. More todo  
+     + plot all variables and understand their distribution for better feature engineering.
+
+### Categorical vs Categorical
+```{r cahce=T}
+library(ggplot2)
+# plot function
+all_bar <- function(i) {
+     ggplot(cat_train, aes(x=i, fill=income_level)) +
+          geom_bar(position = "dodge",  color="black") + 
+          scale_fill_brewer(palette = "Pastel1") +
+          theme(axis.text.x=element_text(angle=60, hjust=1, size=10))
+}
+# variable class_of_worker
+all_bar(cat_train$class_of_worker)
+```
+
+1. For 'Not in universe' category. Let's assume that people got frustrated while filling their census data. 
+2. This variable looks imbalanced because only two category levels seem to dominate. 
+     + combine levels having less than 5% frequency of the total category frequency.
+
+```{r cache=T}
+# variable education
+all_bar(cat_train$education)
+```
+
+1. All children have income_level 0.
+2. Bachelors degree holders have the largest proportion of people have income_level 1. 
+3. More todo
+     + plot all other categorical variables.
+
+Alternate ways is without the barchart is using the table.
+```{r cache=T}
+# Check the effect of dependent variable per categories
+round(prop.table(table(cat_train$marital_status, cat_train$income_level), 1)*100)
+round(prop.table(table(cat_train$class_of_worker, cat_train$income_level), 1)*100)
+```
+
+# Data Cleaning
+```{r cache=T, warning=F}
+# check missing values 
+table(is.na(num_train))
+table(is.na(num_test))
+
+# remove highly corr. vars
+library(caret)
+num_train$income_level <- NULL
+ax <- findCorrelation(x = cor(num_train), cutoff = 0.7)
+num_train <- num_train[, -ax, with=FALSE]
+num_test[, weeks_worked_in_year := NULL] 
+
+# check missing values per columns
+mvtr <- sapply(cat_train, function(x){sum(is.na(x))/length(x)})*100
+mvte <- sapply(cat_test, function(x){sum(is.na(x)/length(x))}*100)
+mvtr
+mvte
+
+# remove ~50% missing values. 
+cat_train <- subset(cat_train, select = mvtr < 5 )
+cat_test <- subset(cat_test, select = mvte < 5)
+
+
+# set NA as 'Unavailable' - train data
+# 1. convert to characters
+cat_train <- cat_train[ ,names(cat_train) := lapply(.SD, as.character), .SDcols = names(cat_train)]
+for (i in seq_along(cat_train)) set(cat_train, i=which(is.na(cat_train[[i]])), j=i, value="Unavailable")
+# 2. convert back to factors
+cat_train <- cat_train[, names(cat_train) := lapply(.SD,factor), .SDcols = names(cat_train)]
+
+# set NA as 'Unavailable' - test data
+# 1. convert to characters
+cat_test <- cat_test[, (names(cat_test)) := lapply(.SD, as.character), .SDcols = names(cat_test)]
+for (i in seq_along(cat_test)) set(cat_test, i=which(is.na(cat_test[[i]])), j=i, value="Unavailable")
+# 2. convert back to factors
+cat_test <- cat_test[, (names(cat_test)) := lapply(.SD, factor), .SDcols = names(cat_test)]
+```
+
+# Data Manipulation & Feature Engineering
+1. Fix low frequencies by combining levels
+2. Fix imbalanced classification
+3. Remove zero variant variables
+
+## Categorical Variables
+```{r cache=T, warning=F, include=FALSE}
+# combine factor levels with less than 5% values
+# train set
+for(i in names(cat_train)) { 
+     p <- 5/100
+     ld <- names(which(prop.table(table(cat_train[[i]])) < p))
+     levels(cat_train[[i]])[levels(cat_train[[i]]) %in% ld] <- "Other"
+}
+
+# test set
+for(i in names(cat_test)){
+                  p <- 5/100
+                  ld <- names(which(prop.table(table(cat_test[[i]])) < p))
+                  levels(cat_test[[i]])[levels(cat_test[[i]]) %in% ld] <- "Other"
+}
+
+# check the mismatch between categorical levels in train and test data.
+# "nlevs" returns the unique number of level. 
+library(mlr)
+summarizeColumns(cat_train)[, "nlevs"] == summarizeColumns(cat_test)[, "nlevs"]
+```
+
+
+## Numerical Variables
+1. Look at numeric variables and reflect on possible ways for binning. 
+     + create simple tables representing counts of unique values in these variables.
+
+```{r cache=T, eval=F}
+# counts of unique values and reorder them
+num_train[, .N, age][order(age)]
+num_train[, .N, wage_per_hour][order(-N)]
+```
+
+1. Todo
+     + check other variables also. 
+2. It's clear that more than 70-80% of the observations are 0 in these variables. 
+3. Bin these variables accordingly. 
+     + Use decision tree to determine the range of resultant bins. 
+          + It will be interested to see how 0-25, 26-65, 66-90 works (discerned from plots above).  
+
+```{r cache=T, warning=F}
+# bin age variable 0-30 31-60 61-90
+# 'cut' function divides the range of x into intervals
+num_train[, age:= cut(x=age, breaks=c(0,30,60,90), include.lowest=TRUE, labels=c("young","adult","old"))]
+num_train[, age := factor(age)]
+
+num_test[, age := cut(x=age, breaks=c(0,30,60,90), include.lowest=TRUE, labels=c("young","adult","old"))]
+num_test[, age := factor(age)]
+
+# Bin numeric variables with Zero and MoreThanZero
+num_train[, wage_per_hour := ifelse(wage_per_hour == 0, "Zero", "MoreThanZero")][, wage_per_hour := as.factor(wage_per_hour)]
+num_train[, capital_gains := ifelse(capital_gains == 0,"Zero", "MoreThanZero")][, capital_gains := as.factor(capital_gains)]
+num_train[, capital_losses := ifelse(capital_losses == 0,"Zero", "MoreThanZero")][, capital_losses := as.factor(capital_losses)]
+num_train[, dividend_from_Stocks := ifelse(dividend_from_Stocks == 0,"Zero","MoreThanZero")][,dividend_from_Stocks := as.factor(dividend_from_Stocks)]
+
+num_test[, wage_per_hour := ifelse(wage_per_hour == 0, "Zero", "MoreThanZero")][, wage_per_hour := as.factor(wage_per_hour)]
+num_test[, capital_gains := ifelse(capital_gains == 0, "Zero", "MoreThanZero")][, capital_gains := as.factor(capital_gains)]
+num_test[, capital_losses := ifelse(capital_losses == 0, "Zero", "MoreThanZero")][, capital_losses := as.factor(capital_losses)]
+num_test[, dividend_from_Stocks := ifelse(dividend_from_Stocks == 0, "Zero", "MoreThanZero")][, dividend_from_Stocks := as.factor(dividend_from_Stocks)]
+
+# Now, we can remove the dependent variable from num_train.
+num_train[, income_level := NULL]
+```
+
+# Machine Learning
+Making predictions on this data should atleast give us ~94% accuracy. However, we need to know if we are predicting minority class correctly. 
+
+1. Sensitivity = True Positive Rate (TP/TP+FN)
+     + 'out of all the positive (majority class) values, how many have been predicted correctly'.
+2. Specificity = True Negative Rate (FP/FP +FN) 
+     + 'out of all the negative (minority class) values, how many have been predicted correctly'.
+3. Precision = (TP/TP+FP)
+4. Recall = Sensitivity
+5. F score = 2 * (Precision * Recall)/ (Precision + Recall) 
+     + The harmonic mean of precision and recall, used to compare several models side-by-side. Higher the better.
+
+```{r cache=T, warning=F}
+# combine data and make test & train files
+d_train <- cbind(num_train, cat_train)
+d_test <- cbind(num_test, cat_test)
+# remove unwanted files
+rm(num_train, num_test, cat_train, cat_test) # save memory
+
+# load library for machine learning
+library(mlr)
+library(FSelector)
+# create task
+train.task <- makeClassifTask(data=d_train,target="income_level")
+test.task <- makeClassifTask(data=d_test,target="income_level")
+
+# remove zero variance features
+train.task <- removeConstantFeatures(train.task)
+test.task <- removeConstantFeatures(test.task)
+
+# get variable importance chart
+var_imp <- generateFilterValuesData(train.task, method=c("information.gain"))
+plotFilterValues(var_imp, feat.type.cols=TRUE)
+```
+
+1. 'major_occupation_code' provides highest information. 
+2. Balanced data using over sampling, undersampling and SMOTE. 
+     + In SMOTE, the algorithm looks at N-Nearest neighbors, measures the distance between them and introduces a new observation at the center of n observations. 
+          + These techniques have their own drawbacks such as:
+               + undersampling leads to loss of information
+               + oversampling leads to overestimation of minority class
+3. Try all techniques and experience how it affects.
+
+```{r cache=T, warning=F}
+# undersampling 
+train.under <- undersample(train.task, rate=0.1) # keep only 10% of majority class
+table(getTaskTargets(train.under))
+
+# oversampling
+train.over <- oversample(train.task, rate=15) # make minority class 15 times
+table(getTaskTargets(train.over))
+
+# SMOTE # only works in binary classification
+system.time(
+     train.smote <- smote(train.task, rate=10, nn=3)
+)
+table(getTaskTargets(train.smote))
+
+# lets see which algorithms are available
+listLearners("classif", "twoclass")[c("class", "package")]
+```
+
+## Naive ayes
+1. In case of high dimensional data like text-mining, naive Bayes tends to do wonders in accuracy, it works on categorical data. 
+2. In case of numeric variables, a normal distribution is considered for these variables and a mean and standard deviation is calculated. Then, using some standard z-table calculations probabilities can be estimated for each of your continuous variables to make the naive Bayes classifier.
+3. Will use Naive Bayes on all 4 data sets (imbalanced, oversample, undersample and SMOTE) and compare the prediction accuracy using cross validation.
+
+### Cross-Validation
+```{r cache=T, warning=F, include=FALSE}
+# listLearners("classif","twoclass")[c("class","package")]
+# create learner
+naive_learner <- makeLearner("classif.naiveBayes", predict.type="response")
+naive_learner$par.vals <- list(laplace=1)
+
+# 10fold CV - stratified
+folds <- makeResampleDesc("CV", iters=10, stratify=TRUE)
+
+# cross validation function
+fun_cv <- function(a){
+     crv_val <- resample(naive_learner, a,folds, measures=list(acc,tpr,tnr,fpr,fp,fn))
+     crv_val$aggr
+}
+
+fun_cv(train.task)
+# acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#     0.7170000     0.7052330     0.8948472     0.1051528   130.2000000  5516.3000000
+
+fun_cv(train.under) 
+# acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#    0.75710670    0.65373426    0.91334197    0.08665803  107.30000000  648.00000000
+
+fun_cv(train.over)
+# acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#     0.7799668     0.6454545     0.9155010     0.0844990  1569.4000000  6635.0000000 
+
+fun_cv(train.smote)
+# acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#     0.8595226     0.8096355     0.9349217     0.06507834   805.8000     3562.500 
+```
+
+1. train.smote gives the highest true positive rate and true negative rate. 
+     + Hence, we learn that SMOTE technique outperforms the other two sampling methods.
+
+### Building Model and Prediction
+```{r cache=T, results="hide"}
+# create learner
+naive_learner <- makeLearner("classif.naiveBayes", predict.type="response")
+naive_learner$par.vals <- list(laplace=1)
+
+# train and predict
+nB_model <- train(naive_learner, train.smote)
+nB_predict <- predict(nB_model, test.task)
+
+# evaluate
+nB_prediction <- nB_predict$data$response
+dCM <- confusionMatrix(d_test$income_level, nB_prediction)
+# Accuracy : 0.8105
+# Sensitivity : 0.9855 -> majority class prediction
+# Specificity : 0.2218 -> minority class prediction
+
+# calculate F measure
+precision <- dCM$byClass['Pos Pred Value']
+recall <- dCM$byClass['Sensitivity']
+f_measure_nB <- 2*((precision*recall)/(precision+recall))
+print(f_measure_nB)
+```
+
+
+## xgboost
+Let's use xgboost algorithm and try to improve our model. We'll do 5 fold cross validation and 5 round random search for parameter tuning. Finally, we'll build the model using the best tuned parameters.
+
+### Finding the best tunning parameter
+```{r cache=T, results="hide"}
+set.seed(2002)
+# create learner
+xgb_learner <- makeLearner("classif.xgboost", predict.type="response")
+xgb_learner$par.vals <- list(
+     objective = "binary:logistic",
+     eval_metric = "error",
+     nrounds = 150,
+     print.every.n = 50)
+
+# set parameters
+xg_ps <- makeParamSet(
+     makeIntegerParam("max_depth",lower=3, upper=10),
+     makeNumericParam("lambda",lower=0.05, upper=0.5),
+     makeNumericParam("eta", lower = 0.01, upper = 0.5),
+     makeNumericParam("subsample", lower = 0.50, upper=1),
+     makeNumericParam("min_child_weight",lower=2,upper=10),
+     makeNumericParam("colsample_bytree",lower = 0.50,upper=0.80))
+
+# set search funtion
+rancontrol <- makeTuneControlRandom(maxit=5L) # do 5 iterations
+
+# set cross validation
+set_cv <- makeResampleDesc("CV", iters=5L, stratify = TRUE)
+
+# set tune parameters
+xgb_tune <- tuneParams(learner=xgb_learner, task=train.task, resampling=set_cv, 
+                       measures=list(acc,tpr,tnr,fpr,fp,fn), par.set=xg_ps, control=rancontrol)
+# Tune result:
+# max_depth=3; lambda=0.243; eta=0.233; subsample=0.936; min_child_weight=2.92; colsample_bytree=0.793 : 
+# acc.test.mean=0.945,tpr.test.mean=0.989,tnr.test.mean=0.285,fpr.test.mean=0.715,fp.test.mean=1.77e+03,fn.test.mean= 403
+```
+
+### Use the tunning parameter for modeling and prediction
+```{r cache=T, results="hide"}
+# set hyperparameters
+xgb_new <- setHyperPars(learner=xgb_learner, par.vals=xgb_tune$x)
+
+# train model
+xgmodel <- train(xgb_new, train.task)
+
+# test model
+predict.xg <- predict(xgmodel, test.task)
+
+# make prediction
+xg_prediction <- predict.xg$data$response
+
+# make confusion matrix
+xg_confused <- confusionMatrix(d_test$income_level,xg_prediction)
+# Accuracy : 0.948
+# Sensitivity : 0.9574
+# Specificity : 0.6585
+
+# calculate f-measure
+precision <- xg_confused$byClass['Pos Pred Value']
+recall <- xg_confused$byClass['Sensitivity']
+f_measure_xg <- 2*((precision*recall)/(precision+recall))
+print(f_measure_xg)
+```
+
+1. xgboost has outperformed naive Bayes model's accuracy
+2. Todo
+     + Try using the important variables only.
+
+### Find tune & build Model & Predict output - Important variable only
+```{r cache=T, results="hide"}
+filtered.data <- filterFeatures(train.task, method = "information.gain", abs = 20)
+
+# set tune parameters
+xgb_tune2 <- tuneParams(learner=xgb_learner, task=filtered.data, resampling=set_cv, 
+                       measures=list(acc,tpr,tnr,fpr,fp,fn), par.set=xg_ps, control=rancontrol)
+# Op. pars: max_depth=6; lambda=0.244; eta=0.181; subsample=0.697; min_child_weight=2.15; colsample_bytree=0.742
+# acc.test.mean=0.945,tpr.test.mean=0.988,tnr.test.mean=0.294,fpr.test.mean=0.706,fp.test.mean=1.75e+03,fn.test.mean= 434
+
+# set hyperparameters
+xgb_new2 <- setHyperPars(learner=xgb_learner, par.vals=xgb_tune2$x)
+
+# train model
+xgmodel2 <- train(xgb_new, filtered.data)
+
+# test model
+predict.xg <- predict(xgmodel2, test.task)
+
+# make prediction
+xg_prediction <- predict.xg$data$response
+
+# make confusion matrix
+xg_confused <- confusionMatrix(d_test$income_level,xg_prediction)
+# Accuracy : 0.948
+# Sensitivity : 0.9574
+# Specificity : 0.6585
+
+# calculate f-measure
+precision <- xg_confused$byClass['Pos Pred Value']
+recall <- xg_confused$byClass['Sensitivity']
+f_measure_xg2 <- 2*((precision*recall)/(precision+recall))
+print(f_measure_xg2)
+```
+
+* Original xgboost with full variables performs better in this case.
+
+### AUC tunning
+* Threshold of 0.5 favors the majority class 
+     + Adjust the threshold for better prediction using AUC Curve
+
+```{r cache=T}
+# xgboost chnage to probabiliy for AUC 
+xgb_new <- setHyperPars(learner=xgb_learner, par.vals=xgb_tune$x)
+xgb_prob <- setPredictType(learner=xgb_new, predict.type="prob")
+
+# train model
+xgmodel_prob <- train(xgb_prob, train.task)
+
+# predict
+predict.xgprob <- predict(xgmodel_prob, test.task)
+
+# predicted probabilities
+predict.xgprob$data[1:10, ]
+
+df <- generateThreshVsPerfData(predict.xgprob, measures=list(fpr,tpr))
+plotROCCurves(df)
+
+# set threshold as 0.4
+pred2 <- setThreshold(predict.xgprob, 0.4)
+xg_confused <- confusionMatrix(d_test$income_level, pred2$data$response)
+# Accuracy : 0.9449
+# Sensitivity : 0.9498 
+# Specificity : 0.6871
+
+# calculate f-measure
+precision <- xg_confused$byClass['Pos Pred Value']
+recall <- xg_confused$byClass['Sensitivity']
+f_measure_xg3 <- 2*((precision*recall)/(precision+recall))
+
+# set threshold as 0.4
+pred3 <- setThreshold(predict.xgprob, 0.3)
+xg_confused <- confusionMatrix(d_test$income_level, pred3$data$response)
+# Accuracy : 0.942 
+# Sensitivity :  0.9438 
+# Specificity : 0.7339
+
+# calculate f-measure
+precision <- xg_confused$byClass['Pos Pred Value']
+recall <- xg_confused$byClass['Sensitivity']
+f_measure_xg4 <- 2*((precision*recall)/(precision+recall))
+print(f_measure_xg4)
+```
+
+1. This model has outperformed all our models because 73% of the minority classes have been predicted correctly.
+2. Todo
+     + Test other threshold values to check if your model improves. 
+     + Increase the number of rounds   
+     + Do 10 fold CV
+     + Increase repetitions in random search
+     + Build models on other 3 data sets and see which one is better
+     + Assign class weights such that the algorithm pays more attention while classifying the class with higher weight.
+     
+## SVM
+```{r cache=T, results="hide"}
+# # create learner
+# getParamSet("classif.svm")
+# svm_learner <- makeLearner("classif.svm", predict.type="response")
+# svm_learner$par.vals<- list(class.weights=c("0"=1, "1"=10), kernel="radial")
+# 
+# # set parameters
+# svm_param <- makeParamSet(
+#      makeIntegerParam("cost", lower = 10^-1, upper=10^2),
+#      makeIntegerParam("gamma", lower= 0.5, upper=2))
+# 
+# # set search funtion
+# set_search <- makeTuneControlRandom(maxit=5L) #5 times
+# 
+# # set cross validation
+# set_cv <- makeResampleDesc("CV", iters=5L, stratify=TRUE)
+# 
+# # set tune parameters
+# svm_tune <- tuneParams(learner=svm_learner, task=train.task, measures=list(acc,tpr,tnr,fpr,fp,fn), 
+#                        par.set=svm_param, control=set_search, resampling=set_cv)
+# 
+# # set hyperparameters
+# svm_new <- setHyperPars(learner=svm_learner, par.vals=svm_tune$x)
+# 
+# # train model
+# svm_model <- train(svm_new, train.task)
+# 
+# # test model
+# predict_svm <- predict(svm_model, test.task)
+# 
+# # make confusion matrix
+# svm_confused <- confusionMatrix(d_test$income_level, predict_svm$data$response)
+# svm_confused
+# 
+# # calculate f-measure
+# precision <- svm_confused$byClass['Pos Pred Value']
+# recall <- svm_confused$byClass['Sensitivity']
+# f_measure_svm <- 2*((precision*recall)/(precision+recall))
+```
+
+
+## KNN
+```{r cache=T, results="hide"}
+# # create learner
+# getParamSet("classif.knn")
+# knn.learner <- makeLearner("classif.knn",predict.type = "response") #create task > iris.task
+# 
+# # set parameters
+# params <- makeParamSet(makeIntegerParam("k",lower=1, upper=25)) 
+# 
+# # set search funtion
+# grid_cv <- makeTuneControlGrid() 
+# 
+# # set cross validation
+# set_cv <- makeResampleDesc("RepCV", reps=15, folds=10, stratify=TRUE) 
+# 
+# # set tune parameters
+# tune.knn <- tuneParams(learner=knn.learner, task=train.task, resampling=set_cv, 
+#                        measures=acc, par.set=params, control = grid_cv) 
+# 
+# # set hyperparameters
+# knn_new <- setHyperPars(learner=knn.learner, par.vals=tune.knn$x)
+# 
+# # train model
+# knn_model <- train(knn_new, train.task)
+# 
+# # test model
+# predict_knn <- predict(knn_model, test.task)
+# 
+# # make confusion matrix
+# knn_confused <- confusionMatrix(d_test$income_level, predict_knn$data$response)
+# knn_confused
+# 
+# # calculate f-measure
+# precision <- knn_confused$byClass['Pos Pred Value']
+# recall <- knn_confused$byClass['Sensitivity']
+# f_measure_knn <- 2*((precision*recall)/(precision+recall))
+```
+
+```{r cache=T}
+# model_name <- c("Naive", "xgb_normal_.5","xgb_imp.var", "xgb_normal_.3", "xgb_normal_.4", "knn")
+# model_f_val <- c(f_measure_nB, f_measure_xg, f_measure_xg2, f_measure_xg3, f_measure_xg4, f_measure_knn)
+# 
+# data.frame(model_name, model_f_val)
+```
+
