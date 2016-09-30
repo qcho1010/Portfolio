@@ -44,7 +44,7 @@ In this problem, we are going to use census information about an individual to p
           
 
 # Data Exploration
-```{r include=FALSE, cahce=T}
+```{r cahce=T}
 # Set working directory
 path <- "F:/Google Drive/new_proj/project 101"
 # path <- "C:/Users/Kyu/Google Drive/new_proj/project 101"
@@ -231,7 +231,7 @@ cat_test <- cat_test[, (names(cat_test)) := lapply(.SD, factor), .SDcols = names
 3. Remove zero variant variables
 
 ## Categorical Variables
-```{r cache=T, warning=F, include=FALSE}
+```{r cache=T}
 # combine factor levels with less than 5% values
 # train set
 for(i in names(cat_train)) { 
@@ -363,7 +363,7 @@ listLearners("classif", "twoclass")[c("class", "package")]
 3. Will use Naive Bayes on all 4 data sets (imbalanced, oversample, undersample and SMOTE) and compare the prediction accuracy using cross validation.
 
 ### Cross-Validation
-```{r cache=T, warning=F, include=FALSE}
+```{r cache=T, warning=F}
 # listLearners("classif","twoclass")[c("class","package")]
 # create learner
 naive_learner <- makeLearner("classif.naiveBayes", predict.type="response")
@@ -399,7 +399,7 @@ fun_cv(train.smote)
      + Hence, we learn that SMOTE technique outperforms the other two sampling methods.
 
 ### Building Model and Prediction
-```{r cache=T, results="hide"}
+```{r cache=T}
 # create learner
 naive_learner <- makeLearner("classif.naiveBayes", predict.type="response")
 naive_learner$par.vals <- list(laplace=1)
@@ -427,7 +427,7 @@ print(f_measure_nB)
 Let's use xgboost algorithm and try to improve our model. We'll do 5 fold cross validation and 5 round random search for parameter tuning. Finally, we'll build the model using the best tuned parameters.
 
 ### Finding the best tunning parameter
-```{r cache=T, results="hide"}
+```{r cache=T}
 set.seed(2002)
 # create learner
 xgb_learner <- makeLearner("classif.xgboost", predict.type="response")
@@ -461,7 +461,7 @@ xgb_tune <- tuneParams(learner=xgb_learner, task=train.task, resampling=set_cv,
 ```
 
 ### Use the tunning parameter for modeling and prediction
-```{r cache=T, results="hide"}
+```{r cache=T}
 # set hyperparameters
 xgb_new <- setHyperPars(learner=xgb_learner, par.vals=xgb_tune$x)
 
@@ -492,7 +492,7 @@ print(f_measure_xg)
      + Try using the important variables only.
 
 ### Find tune & build Model & Predict output - Important variable only
-```{r cache=T, results="hide"}
+```{r cache=T}
 filtered.data <- filterFeatures(train.task, method = "information.gain", abs = 20)
 
 # set tune parameters
@@ -585,7 +585,7 @@ print(f_measure_xg4)
      + Assign class weights such that the algorithm pays more attention while classifying the class with higher weight.
      
 ## SVM
-```{r cache=T, results="hide"}
+```{r cache=T}
 # # create learner
 # getParamSet("classif.svm")
 # svm_learner <- makeLearner("classif.svm", predict.type="response")
@@ -627,7 +627,7 @@ print(f_measure_xg4)
 
 
 ## KNN
-```{r cache=T, results="hide"}
+```{r cache=T}
 # # create learner
 # getParamSet("classif.knn")
 # knn.learner <- makeLearner("classif.knn",predict.type = "response") #create task > iris.task

@@ -183,6 +183,15 @@ $(document).ready(function () {
 </div>
 <div id="data-exploration" class="section level1">
 <h1>Data Exploration</h1>
+<pre class="r"><code># Set working directory
+path &lt;- &quot;F:/Google Drive/new_proj/project 101&quot;
+# path &lt;- &quot;C:/Users/Kyu/Google Drive/new_proj/project 101&quot;
+setwd(path)
+
+# Load Data and clean the missing data label
+library(data.table)
+train &lt;- fread(&quot;train.csv&quot;, na.strings = c(&quot;&quot;, &quot; &quot;, &quot;?&quot;, &quot;NA&quot;, NA))
+test &lt;- fread(&quot;test.csv&quot;, na.strings = c(&quot;&quot;, &quot; &quot;, &quot;?&quot;, &quot;NA&quot;, NA))</code></pre>
 <pre class="r"><code># Look at data
 dim(train)</code></pre>
 <pre><code>## [1] 199523     41</code></pre>
@@ -612,6 +621,28 @@ cat_test &lt;- cat_test[, (names(cat_test)) := lapply(.SD, factor), .SDcols = na
 </ol>
 <div id="categorical-variables" class="section level2">
 <h2>Categorical Variables</h2>
+<pre class="r"><code># combine factor levels with less than 5% values
+# train set
+for(i in names(cat_train)) { 
+     p &lt;- 5/100
+     ld &lt;- names(which(prop.table(table(cat_train[[i]])) &lt; p))
+     levels(cat_train[[i]])[levels(cat_train[[i]]) %in% ld] &lt;- &quot;Other&quot;
+}
+
+# test set
+for(i in names(cat_test)){
+                  p &lt;- 5/100
+                  ld &lt;- names(which(prop.table(table(cat_test[[i]])) &lt; p))
+                  levels(cat_test[[i]])[levels(cat_test[[i]]) %in% ld] &lt;- &quot;Other&quot;
+}
+
+# check the mismatch between categorical levels in train and test data.
+# &quot;nlevs&quot; returns the unique number of level. 
+library(mlr)
+summarizeColumns(cat_train)[, &quot;nlevs&quot;] == summarizeColumns(cat_test)[, &quot;nlevs&quot;]</code></pre>
+<pre><code>##  [1] TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+## [15] TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+## [29] TRUE TRUE</code></pre>
 </div>
 <div id="numerical-variables" class="section level2">
 <h2>Numerical Variables</h2>
@@ -784,6 +815,95 @@ listLearners(&quot;classif&quot;, &quot;twoclass&quot;)[c(&quot;class&quot;, &qu
 </ol>
 <div id="cross-validation" class="section level3">
 <h3>Cross-Validation</h3>
+<pre class="r"><code># listLearners(&quot;classif&quot;,&quot;twoclass&quot;)[c(&quot;class&quot;,&quot;package&quot;)]
+# create learner
+naive_learner &lt;- makeLearner(&quot;classif.naiveBayes&quot;, predict.type=&quot;response&quot;)
+naive_learner$par.vals &lt;- list(laplace=1)
+
+# 10fold CV - stratified
+folds &lt;- makeResampleDesc(&quot;CV&quot;, iters=10, stratify=TRUE)
+
+# cross validation function
+fun_cv &lt;- function(a){
+     crv_val &lt;- resample(naive_learner, a,folds, measures=list(acc,tpr,tnr,fpr,fp,fn))
+     crv_val$aggr
+}
+
+fun_cv(train.task)</code></pre>
+<pre><code>## [Resample] cross-validation iter: 1</code></pre>
+<pre><code>## [Resample] cross-validation iter: 2</code></pre>
+<pre><code>## [Resample] cross-validation iter: 3</code></pre>
+<pre><code>## [Resample] cross-validation iter: 4</code></pre>
+<pre><code>## [Resample] cross-validation iter: 5</code></pre>
+<pre><code>## [Resample] cross-validation iter: 6</code></pre>
+<pre><code>## [Resample] cross-validation iter: 7</code></pre>
+<pre><code>## [Resample] cross-validation iter: 8</code></pre>
+<pre><code>## [Resample] cross-validation iter: 9</code></pre>
+<pre><code>## [Resample] cross-validation iter: 10</code></pre>
+<pre><code>## [Resample] Result: acc.test.mean=0.732,tpr.test.mean=0.721,tnr.test.mean=0.896,fpr.test.mean=0.104,fp.test.mean= 128,fn.test.mean=5.21e+03</code></pre>
+<pre><code>## acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean 
+##     0.7322514     0.7213919     0.8963815     0.1036185   128.3000000 
+##  fn.test.mean 
+##  5213.9000000</code></pre>
+<pre class="r"><code># acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#     0.7170000     0.7052330     0.8948472     0.1051528   130.2000000  5516.3000000
+
+fun_cv(train.under) </code></pre>
+<pre><code>## [Resample] cross-validation iter: 1</code></pre>
+<pre><code>## [Resample] cross-validation iter: 2</code></pre>
+<pre><code>## [Resample] cross-validation iter: 3</code></pre>
+<pre><code>## [Resample] cross-validation iter: 4</code></pre>
+<pre><code>## [Resample] cross-validation iter: 5</code></pre>
+<pre><code>## [Resample] cross-validation iter: 6</code></pre>
+<pre><code>## [Resample] cross-validation iter: 7</code></pre>
+<pre><code>## [Resample] cross-validation iter: 8</code></pre>
+<pre><code>## [Resample] cross-validation iter: 9</code></pre>
+<pre><code>## [Resample] cross-validation iter: 10</code></pre>
+<pre><code>## [Resample] Result: acc.test.mean=0.764,tpr.test.mean=0.665,tnr.test.mean=0.914,fpr.test.mean=0.0861,fp.test.mean= 107,fn.test.mean= 626</code></pre>
+<pre><code>## acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean 
+##     0.7642464     0.6652239     0.9139072     0.0860928   106.6000000 
+##  fn.test.mean 
+##   626.5000000</code></pre>
+<pre class="r"><code># acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#    0.75710670    0.65373426    0.91334197    0.08665803  107.30000000  648.00000000
+
+fun_cv(train.over)</code></pre>
+<pre><code>## [Resample] cross-validation iter: 1</code></pre>
+<pre><code>## [Resample] cross-validation iter: 2</code></pre>
+<pre><code>## [Resample] cross-validation iter: 3</code></pre>
+<pre><code>## [Resample] cross-validation iter: 4</code></pre>
+<pre><code>## [Resample] cross-validation iter: 5</code></pre>
+<pre><code>## [Resample] cross-validation iter: 6</code></pre>
+<pre><code>## [Resample] cross-validation iter: 7</code></pre>
+<pre><code>## [Resample] cross-validation iter: 8</code></pre>
+<pre><code>## [Resample] cross-validation iter: 9</code></pre>
+<pre><code>## [Resample] cross-validation iter: 10</code></pre>
+<pre><code>## [Resample] Result: acc.test.mean=0.785,tpr.test.mean=0.656,tnr.test.mean=0.915,fpr.test.mean=0.0848,fp.test.mean=1.58e+03,fn.test.mean=6.44e+03</code></pre>
+<pre><code>## acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean 
+##  7.849095e-01  6.556233e-01  9.151779e-01  8.482205e-02  1.575400e+03 
+##  fn.test.mean 
+##  6.444700e+03</code></pre>
+<pre class="r"><code># acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#     0.7799668     0.6454545     0.9155010     0.0844990  1569.4000000  6635.0000000 
+
+fun_cv(train.smote)</code></pre>
+<pre><code>## [Resample] cross-validation iter: 1</code></pre>
+<pre><code>## [Resample] cross-validation iter: 2</code></pre>
+<pre><code>## [Resample] cross-validation iter: 3</code></pre>
+<pre><code>## [Resample] cross-validation iter: 4</code></pre>
+<pre><code>## [Resample] cross-validation iter: 5</code></pre>
+<pre><code>## [Resample] cross-validation iter: 6</code></pre>
+<pre><code>## [Resample] cross-validation iter: 7</code></pre>
+<pre><code>## [Resample] cross-validation iter: 8</code></pre>
+<pre><code>## [Resample] cross-validation iter: 9</code></pre>
+<pre><code>## [Resample] cross-validation iter: 10</code></pre>
+<pre><code>## [Resample] Result: acc.test.mean=0.872,tpr.test.mean=0.825,tnr.test.mean=0.943,fpr.test.mean=0.0571,fp.test.mean= 706,fn.test.mean=3.28e+03</code></pre>
+<pre><code>## acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean 
+##  8.718360e-01  8.247898e-01  9.429414e-01  5.705863e-02  7.065000e+02 
+##  fn.test.mean 
+##  3.278900e+03</code></pre>
+<pre class="r"><code># acc.test.mean tpr.test.mean tnr.test.mean fpr.test.mean  fp.test.mean  fn.test.mean 
+#     0.8595226     0.8096355     0.9349217     0.06507834   805.8000     3562.500 </code></pre>
 <ol style="list-style-type: decimal">
 <li>train.smote gives the highest true positive rate and true negative rate.
 <ul>
@@ -813,6 +933,8 @@ precision &lt;- dCM$byClass['Pos Pred Value']
 recall &lt;- dCM$byClass['Sensitivity']
 f_measure_nB &lt;- 2*((precision*recall)/(precision+recall))
 print(f_measure_nB)</code></pre>
+<pre><code>## Pos Pred Value 
+##      0.8987067</code></pre>
 </div>
 </div>
 <div id="xgboost" class="section level2">
@@ -858,15 +980,90 @@ xgb_tune &lt;- tuneParams(learner=xgb_learner, task=train.task, resampling=set_c
 <pre><code>## With control class: TuneControlRandom</code></pre>
 <pre><code>## Imputation value: -0Imputation value: -0Imputation value: -0Imputation value: 1Imputation value: InfImputation value: Inf</code></pre>
 <pre><code>## [Tune-x] 1: max_depth=5; lambda=0.146; eta=0.374; subsample=0.841; min_child_weight=8.23; colsample_bytree=0.587</code></pre>
-<pre><code>## [Tune-y] 1: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.352,fpr.test.mean=0.648,fp.test.mean=1.61e+03,fn.test.mean= 462; time: 1.3 min; memory: 355Mb use, 5820Mb max</code></pre>
+<pre><code>## [0]  train-error:0.057136
+## [50] train-error:0.050552
+## [100]    train-error:0.049167
+## [0]  train-error:0.056961
+## [50] train-error:0.050257
+## [100]    train-error:0.049048
+## [0]  train-error:0.062060
+## [50] train-error:0.050451
+## [100]    train-error:0.049267
+## [0]  train-error:0.062054
+## [50] train-error:0.050289
+## [100]    train-error:0.049280
+## [0]  train-error:0.059454
+## [50] train-error:0.050633
+## [100]    train-error:0.049104</code></pre>
+<pre><code>## [Tune-y] 1: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.352,fpr.test.mean=0.648,fp.test.mean=1.61e+03,fn.test.mean= 462; time: 0.6 min; memory: 381Mb use, 685Mb max</code></pre>
 <pre><code>## [Tune-x] 2: max_depth=3; lambda=0.243; eta=0.233; subsample=0.936; min_child_weight=2.92; colsample_bytree=0.793</code></pre>
-<pre><code>## [Tune-y] 2: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.33,fpr.test.mean=0.67,fp.test.mean=1.66e+03,fn.test.mean= 408; time: 1.0 min; memory: 355Mb use, 5820Mb max</code></pre>
+<pre><code>## [0]  train-error:0.059849
+## [50] train-error:0.052306
+## [100]    train-error:0.051792
+## [0]  train-error:0.062061
+## [50] train-error:0.052325
+## [100]    train-error:0.051623
+## [0]  train-error:0.061521
+## [50] train-error:0.052293
+## [100]    train-error:0.051435
+## [0]  train-error:0.062054
+## [50] train-error:0.052582
+## [100]    train-error:0.051811
+## [0]  train-error:0.062060
+## [50] train-error:0.052243
+## [100]    train-error:0.051642</code></pre>
+<pre><code>## [Tune-y] 2: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.33,fpr.test.mean=0.67,fp.test.mean=1.66e+03,fn.test.mean= 408; time: 0.5 min; memory: 381Mb use, 686Mb max</code></pre>
 <pre><code>## [Tune-x] 3: max_depth=7; lambda=0.259; eta=0.264; subsample=0.66; min_child_weight=7.25; colsample_bytree=0.714</code></pre>
-<pre><code>## [Tune-y] 3: acc.test.mean=0.947,tpr.test.mean=0.987,tnr.test.mean=0.354,fpr.test.mean=0.646,fp.test.mean=1.6e+03,fn.test.mean= 502; time: 1.8 min; memory: 355Mb use, 5820Mb max</code></pre>
+<pre><code>## [0]  train-error:0.059360
+## [50] train-error:0.049042
+## [100]    train-error:0.047325
+## [0]  train-error:0.061691
+## [50] train-error:0.048817
+## [100]    train-error:0.047019
+## [0]  train-error:0.059786
+## [50] train-error:0.049368
+## [100]    train-error:0.047369
+## [0]  train-error:0.056942
+## [50] train-error:0.049124
+## [100]    train-error:0.047269
+## [0]  train-error:0.057844
+## [50] train-error:0.049161
+## [100]    train-error:0.047231</code></pre>
+<pre><code>## [Tune-y] 3: acc.test.mean=0.947,tpr.test.mean=0.987,tnr.test.mean=0.354,fpr.test.mean=0.646,fp.test.mean=1.6e+03,fn.test.mean= 502; time: 0.9 min; memory: 381Mb use, 686Mb max</code></pre>
 <pre><code>## [Tune-x] 4: max_depth=5; lambda=0.171; eta=0.295; subsample=0.855; min_child_weight=5.54; colsample_bytree=0.735</code></pre>
-<pre><code>## [Tune-y] 4: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.349,fpr.test.mean=0.651,fp.test.mean=1.61e+03,fn.test.mean= 457; time: 1.3 min; memory: 355Mb use, 5820Mb max</code></pre>
+<pre><code>## [0]  train-error:0.059523
+## [50] train-error:0.050640
+## [100]    train-error:0.049073
+## [0]  train-error:0.059292
+## [50] train-error:0.050408
+## [100]    train-error:0.048892
+## [0]  train-error:0.061703
+## [50] train-error:0.050752
+## [100]    train-error:0.049305
+## [0]  train-error:0.056779
+## [50] train-error:0.050740
+## [100]    train-error:0.049042
+## [0]  train-error:0.062060
+## [50] train-error:0.050414
+## [100]    train-error:0.049042</code></pre>
+<pre><code>## [Tune-y] 4: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.349,fpr.test.mean=0.651,fp.test.mean=1.61e+03,fn.test.mean= 457; time: 0.9 min; memory: 381Mb use, 686Mb max</code></pre>
 <pre><code>## [Tune-x] 5: max_depth=5; lambda=0.279; eta=0.28; subsample=0.63; min_child_weight=7.08; colsample_bytree=0.572</code></pre>
-<pre><code>## [Tune-y] 5: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.344,fpr.test.mean=0.656,fp.test.mean=1.62e+03,fn.test.mean= 450; time: 1.2 min; memory: 355Mb use, 5820Mb max</code></pre>
+<pre><code>## [0]  train-error:0.059373
+## [50] train-error:0.050959
+## [100]    train-error:0.050001
+## [0]  train-error:0.060081
+## [50] train-error:0.050784
+## [100]    train-error:0.049506
+## [0]  train-error:0.057362
+## [50] train-error:0.050677
+## [100]    train-error:0.049969
+## [0]  train-error:0.059348
+## [50] train-error:0.050590
+## [100]    train-error:0.049512
+## [0]  train-error:0.059260
+## [50] train-error:0.051015
+## [100]    train-error:0.049875</code></pre>
+<pre><code>## [Tune-y] 5: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.344,fpr.test.mean=0.656,fp.test.mean=1.62e+03,fn.test.mean= 450; time: 0.9 min; memory: 381Mb use, 686Mb max</code></pre>
 <pre><code>## [Tune] Result: max_depth=5; lambda=0.146; eta=0.374; subsample=0.841; min_child_weight=8.23; colsample_bytree=0.587 : acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.352,fpr.test.mean=0.648,fp.test.mean=1.61e+03,fn.test.mean= 462</code></pre>
 <pre class="r"><code># Tune result:
 # max_depth=3; lambda=0.243; eta=0.233; subsample=0.936; min_child_weight=2.92; colsample_bytree=0.793 : 
@@ -878,9 +1075,11 @@ xgb_tune &lt;- tuneParams(learner=xgb_learner, task=train.task, resampling=set_c
 xgb_new &lt;- setHyperPars(learner=xgb_learner, par.vals=xgb_tune$x)
 
 # train model
-xgmodel &lt;- train(xgb_new, train.task)
-
-# test model
+xgmodel &lt;- train(xgb_new, train.task)</code></pre>
+<pre><code>## [0]  train-error:0.062058
+## [50] train-error:0.050410
+## [100]    train-error:0.049202</code></pre>
+<pre class="r"><code># test model
 predict.xg &lt;- predict(xgmodel, test.task)
 
 # make prediction
@@ -897,6 +1096,8 @@ precision &lt;- xg_confused$byClass['Pos Pred Value']
 recall &lt;- xg_confused$byClass['Sensitivity']
 f_measure_xg &lt;- 2*((precision*recall)/(precision+recall))
 print(f_measure_xg)</code></pre>
+<pre><code>## Pos Pred Value 
+##      0.9726492</code></pre>
 <ol style="list-style-type: decimal">
 <li>xgboost has outperformed naive Bayes model’s accuracy</li>
 <li>Todo
@@ -923,15 +1124,90 @@ xgb_tune2 &lt;- tuneParams(learner=xgb_learner, task=filtered.data, resampling=s
 <pre><code>## With control class: TuneControlRandom</code></pre>
 <pre><code>## Imputation value: -0Imputation value: -0Imputation value: -0Imputation value: 1Imputation value: InfImputation value: Inf</code></pre>
 <pre><code>## [Tune-x] 1: max_depth=4; lambda=0.439; eta=0.334; subsample=0.899; min_child_weight=6.61; colsample_bytree=0.681</code></pre>
-<pre><code>## [Tune-y] 1: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.329,fpr.test.mean=0.671,fp.test.mean=1.66e+03,fn.test.mean= 418; time: 0.8 min; memory: 350Mb use, 792Mb max</code></pre>
+<pre><code>## [0]  train-error:0.062060
+## [50] train-error:0.051473
+## [100]    train-error:0.050715
+## [0]  train-error:0.058508
+## [50] train-error:0.051767
+## [100]    train-error:0.051178
+## [0]  train-error:0.058759
+## [50] train-error:0.051680
+## [100]    train-error:0.050872
+## [0]  train-error:0.059128
+## [50] train-error:0.051592
+## [100]    train-error:0.050846
+## [0]  train-error:0.058602
+## [50] train-error:0.051767
+## [100]    train-error:0.050984</code></pre>
+<pre><code>## [Tune-y] 1: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.329,fpr.test.mean=0.671,fp.test.mean=1.66e+03,fn.test.mean= 418; time: 0.6 min; memory: 385Mb use, 773Mb max</code></pre>
 <pre><code>## [Tune-x] 2: max_depth=8; lambda=0.189; eta=0.3; subsample=0.847; min_child_weight=6.99; colsample_bytree=0.688</code></pre>
-<pre><code>## [Tune-y] 2: acc.test.mean=0.947,tpr.test.mean=0.986,tnr.test.mean=0.349,fpr.test.mean=0.651,fp.test.mean=1.61e+03,fn.test.mean= 517; time: 1.5 min; memory: 350Mb use, 793Mb max</code></pre>
+<pre><code>## [0]  train-error:0.056904
+## [50] train-error:0.048891
+## [100]    train-error:0.047306
+## [0]  train-error:0.059066
+## [50] train-error:0.049261
+## [100]    train-error:0.047720
+## [0]  train-error:0.057375
+## [50] train-error:0.049249
+## [100]    train-error:0.048128
+## [0]  train-error:0.056328
+## [50] train-error:0.049223
+## [100]    train-error:0.047325
+## [0]  train-error:0.058076
+## [50] train-error:0.049186
+## [100]    train-error:0.047307</code></pre>
+<pre><code>## [Tune-y] 2: acc.test.mean=0.947,tpr.test.mean=0.986,tnr.test.mean=0.349,fpr.test.mean=0.651,fp.test.mean=1.61e+03,fn.test.mean= 517; time: 1.3 min; memory: 385Mb use, 773Mb max</code></pre>
 <pre><code>## [Tune-x] 3: max_depth=3; lambda=0.268; eta=0.374; subsample=0.699; min_child_weight=2.67; colsample_bytree=0.632</code></pre>
-<pre><code>## [Tune-y] 3: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.328,fpr.test.mean=0.672,fp.test.mean=1.66e+03,fn.test.mean= 410; time: 0.7 min; memory: 350Mb use, 793Mb max</code></pre>
+<pre><code>## [0]  train-error:0.062060
+## [50] train-error:0.052293
+## [100]    train-error:0.051623
+## [0]  train-error:0.062060
+## [50] train-error:0.051980
+## [100]    train-error:0.051529
+## [0]  train-error:0.061854
+## [50] train-error:0.052175
+## [100]    train-error:0.051599
+## [0]  train-error:0.062060
+## [50] train-error:0.052099
+## [100]    train-error:0.051692
+## [0]  train-error:0.062054
+## [50] train-error:0.052193
+## [100]    train-error:0.051705</code></pre>
+<pre><code>## [Tune-y] 3: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.328,fpr.test.mean=0.672,fp.test.mean=1.66e+03,fn.test.mean= 410; time: 0.6 min; memory: 385Mb use, 773Mb max</code></pre>
 <pre><code>## [Tune-x] 4: max_depth=4; lambda=0.257; eta=0.158; subsample=0.72; min_child_weight=3; colsample_bytree=0.634</code></pre>
-<pre><code>## [Tune-y] 4: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.322,fpr.test.mean=0.678,fp.test.mean=1.68e+03,fn.test.mean= 400; time: 0.8 min; memory: 350Mb use, 793Mb max</code></pre>
+<pre><code>## [0]  train-error:0.059247
+## [50] train-error:0.052519
+## [100]    train-error:0.051510
+## [0]  train-error:0.060751
+## [50] train-error:0.052625
+## [100]    train-error:0.051905
+## [0]  train-error:0.060802
+## [50] train-error:0.052545
+## [100]    train-error:0.051718
+## [0]  train-error:0.062060
+## [50] train-error:0.052469
+## [100]    train-error:0.051372
+## [0]  train-error:0.059542
+## [50] train-error:0.052601
+## [100]    train-error:0.051761</code></pre>
+<pre><code>## [Tune-y] 4: acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.322,fpr.test.mean=0.678,fp.test.mean=1.68e+03,fn.test.mean= 400; time: 0.7 min; memory: 385Mb use, 773Mb max</code></pre>
 <pre><code>## [Tune-x] 5: max_depth=5; lambda=0.13; eta=0.268; subsample=0.622; min_child_weight=8.47; colsample_bytree=0.696</code></pre>
-<pre><code>## [Tune-y] 5: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.334,fpr.test.mean=0.666,fp.test.mean=1.65e+03,fn.test.mean= 442; time: 1.0 min; memory: 350Mb use, 793Mb max</code></pre>
+<pre><code>## [0]  train-error:0.058120
+## [50] train-error:0.051504
+## [100]    train-error:0.050401
+## [0]  train-error:0.062060
+## [50] train-error:0.051372
+## [100]    train-error:0.050727
+## [0]  train-error:0.058346
+## [50] train-error:0.051241
+## [100]    train-error:0.050596
+## [0]  train-error:0.057976
+## [50] train-error:0.051203
+## [100]    train-error:0.050345
+## [0]  train-error:0.062054
+## [50] train-error:0.051166
+## [100]    train-error:0.050546</code></pre>
+<pre><code>## [Tune-y] 5: acc.test.mean=0.948,tpr.test.mean=0.988,tnr.test.mean=0.334,fpr.test.mean=0.666,fp.test.mean=1.65e+03,fn.test.mean= 442; time: 0.9 min; memory: 385Mb use, 773Mb max</code></pre>
 <pre><code>## [Tune] Result: max_depth=3; lambda=0.268; eta=0.374; subsample=0.699; min_child_weight=2.67; colsample_bytree=0.632 : acc.test.mean=0.948,tpr.test.mean=0.989,tnr.test.mean=0.328,fpr.test.mean=0.672,fp.test.mean=1.66e+03,fn.test.mean= 410</code></pre>
 <pre class="r"><code># Op. pars: max_depth=6; lambda=0.244; eta=0.181; subsample=0.697; min_child_weight=2.15; colsample_bytree=0.742
 # acc.test.mean=0.945,tpr.test.mean=0.988,tnr.test.mean=0.294,fpr.test.mean=0.706,fp.test.mean=1.75e+03,fn.test.mean= 434
@@ -940,9 +1216,11 @@ xgb_tune2 &lt;- tuneParams(learner=xgb_learner, task=filtered.data, resampling=s
 xgb_new2 &lt;- setHyperPars(learner=xgb_learner, par.vals=xgb_tune2$x)
 
 # train model
-xgmodel2 &lt;- train(xgb_new, filtered.data)
-
-# test model
+xgmodel2 &lt;- train(xgb_new, filtered.data)</code></pre>
+<pre><code>## [0]  train-error:0.059602
+## [50] train-error:0.051052
+## [100]    train-error:0.050180</code></pre>
+<pre class="r"><code># test model
 predict.xg &lt;- predict(xgmodel2, test.task)
 
 # make prediction
@@ -959,6 +1237,8 @@ precision &lt;- xg_confused$byClass['Pos Pred Value']
 recall &lt;- xg_confused$byClass['Sensitivity']
 f_measure_xg2 &lt;- 2*((precision*recall)/(precision+recall))
 print(f_measure_xg2)</code></pre>
+<pre><code>## Pos Pred Value 
+##             NA</code></pre>
 <ul>
 <li>Original xgboost with full variables performs better in this case.</li>
 </ul>
