@@ -1,4 +1,4 @@
 # Portfolio
 
 Author: Kyu Cho  
-Last Init: 12/18/16
+Last commit: 12/18/16
