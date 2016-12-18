@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title> Humanitarian Resources </title>
+</head>
+<body ng-controller="homePageController">
+<nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+        <nav class="navbar navbar-inverse" style="border: none">
+            <div class="container-fluid" >
+                    <button ng-click="signUp()" class="btn btn-primary">Area at a Glance</button>
+                    <button ng-click="signUp()" class="btn btn-primary">About</button>
+                    <button ng-click="signUp()" class="btn btn-primary">Services</button>
+                    <button ng-click="signUp()" class="btn btn-primary">Contact</button>
+                <div class="nav navbar-nav navbar-right">
+                    <form class="form-inline">
+                        <div class="form-group">
+                            <input type="email" class="form-control" id="email" placeholder="login">
+                        </div>
+                        <div class="form-group">
+                            <input type="password" class="form-control" id="pwd" placeholder="password">
+                        </div>
+                        <button ng-click="signIn()" class="btn btn-success">Login</button>
+                    </form>
+                </div>
+            </div>
+            </nav>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="row">
+        <div class="col-lg-12">
+            <h2 class="page-header">
+                Humanitarian Resources
+            </h2>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-md-8">
+            <div id="resource_map_container">
+                <iframe id="resource_map" src="http://127.0.0.1:3720/"
+                        style="border: none; width: 100%; height: 400px" frameborder="0" scrolling="no"></iframe>
+            </div>
+            <!--<img class="img-responsive" src="http://localhost:3000/images/map.png" alt="">-->
+        </div>
+        <div class="col-md-4">
+            <h3>How can you provide assistance?</h3>
+            <ol>
+                <li>Check to see what resources are needed around you</li>
+                <li>Sign up to be a provider</li>
+                <li>Update your resources</li>
+                <li>Alert us of someone in need</li>
+                <br/>
+                <button ng-click="signUp()" class="btn btn-default">Sign Up</button>
+                <br/>
+            </ol>
+        </div>
+    </div>
+</div>
+
+
+</body>
+</html>

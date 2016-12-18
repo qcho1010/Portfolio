@@ -1,0 +1,579 @@
+---
+title: "Loan Prediction with 'mlr' pacakge"
+author: "Kyu Cho"
+date: "October 7, 2016"
+output: html_document
+---
+# Introduction
+Dream Housing Finance company deals in all home loans. They have presence across all urban, semi urban and rural areas. Customer first apply for home loan after that company validates the customer eligibility for loan.
+Problem
+
+Company wants to automate the loan eligibility process (real time) based on customer detail provided while filling online application form. These details are Gender, Marital Status, Education, Number of Dependents, Income, Loan Amount, Credit History and others. To automate this process, they have given a problem to identify the customers segments, those are eligible for loan amount so that they can specifically target these customers. 
+
+
+# Variables
+- Variable=Description
+- Loan_ID=Unique Loan ID
+- Gender=Male/ Female
+- Married=Applicant married (Y/N)
+- Dependents=Number of dependents
+- Education=Applicant Education (Graduate/ Under Graduate)
+- Self_Employed=Self employed (Y/N)
+- ApplicantIncome=Applicant income
+- CoapplicantIncome=Coapplicant income
+- LoanAmount=Loan amount in thousands
+- Loan_Amount_Term=Term of loan in months
+- Credit_History=credit history meets guidelines
+- Property_Area=Urban/ Semi Urban/ Rural
+- Loan_Status=Loan approved (Y/N)
+
+# Table of Contents
+1. Getting Data
+2. Exploring Data
+3. Missing Value Imputation
+4. Feature Engineering
+    + Outlier Removal by Capping
+    + New Features
+5. Machine Learning
+    + Feature Importance
+    + QDA
+    + Logistic Regression
+        + Cross Validation
+    + Decision Tree
+        + Cross Validation
+        + Parameter Tuning using Grid Search
+    + Random Forest
+    + SVM
+    + GBM (Gradient Boosting)
+        + Cross Validation
+        + Parameter Tuning using Random Search (Faster)
+    + XGBoost (Extreme Gradient Boosting)
+    + Feature Selection
+
+# Intro    
+'mlr' package has 
+    - Regression
+    - Classification
+    - Clustering
+    - Survival
+    - Multiclassification
+    - Cost sensitive classification
+    
+```{r cache=T, message=FALSE, warning=FALSE}
+library(mlr)
+listLearners("classif")[c("class", "package")]
+```
+
+
+
+# Getting Data
+```{r cache=T, warning=F}
+path <- "C:/Users/Kyu/Google Drive/Portfolio/project 102"
+setwd(path)
+
+train <- read.csv("train.csv", na.strings=c("", " ", NA))
+test <- read.csv("test.csv", na.strings=c("", " ", NA))
+```
+
+# Exploring Data
+```{r cache=T, warning=F}
+summarizeColumns(train)
+summarizeColumns(test)
+```
+- Loan_Status is the dependent variable and rest are independent variables.
+- Train data has 614 observations. Test data has 367 observations.
+- In train and test data, 6 variables have missing values (can be seen in na column).
+- ApplicantIncome and Coapplicant Income are highly skewed variables, as their min, max and median value are shown. Need them to be normalized.
+- LoanAmount, ApplicantIncome and CoapplicantIncome has outlier values, which should be treated.
+- Credit_History is an integer type variable. But, being binary in nature, we should convert it to factor.
+
+```{r}
+# chekcing Skewness
+hist(train$ApplicantIncome, breaks=300, main="Applicant Income Chart", xlab="ApplicantIncome")
+hist(train$CoapplicantIncome, breaks=100, main="Coapplicant Income Chart", xlab="CoapplicantIncome")
+
+# checking outliers
+boxplot(train$ApplicantIncome)
+boxplot(train$CoapplicantIncome)
+boxplot(train$LoanAmount)
+
+# change the class of Credit_History to factor. 
+train$Credit_History <- as.factor(train$Credit_History)
+test$Credit_History <- as.factor(test$Credit_History)
+
+# rename level of Dependents "3+" to "3"
+levels(train$Dependents)[4] <- "3"
+levels(test$Dependents)[4] <- "3"
+```
+
+
+# Missing Value Imputation
+```{r cache=T, message=FALSE, warning=F}
+# impute missing values by mean and mode
+imp <- impute(train, classes=list(factor=imputeMode(), integer=imputeMean()), dummy.classes=c("integer", "factor"), dummy.type="numeric")
+imp1 <- impute(test, classes=list(factor=imputeMode(), integer=imputeMean()), dummy.classes=c("integer", "factor"), dummy.type="numeric")
+```
+
+Input function
+- It selects variables on the basis of their classes.  
+- It creates new dummy variables for missing values. Sometimes, these (dummy) features contain a trend which can be captured using this function.         - - dummy.classes says for which classes should I create a dummy variable. 
+- dummy.type says what should be the class of new dummy variables.
+
+```{r cache=T, message=FALSE, warning=F}
+imp_train <- imp$data
+imp_test <- imp1$data
+summarizeColumns(imp_train)
+summarizeColumns(imp_test)
+```
+
+Married.dummy variable exists only in imp_train and not in imp_test. 
+- Remove it before modeling stage.
+    
+```{r cache=T, message=F, warning=F}
+# # impute with rpart
+# rpart_imp <- impute(train, target="Loan_Status", 
+#                     classes=list(numeric=imputeLearner(makeLearner("regr.rpart")), factor=imputeLearner(makeLearner("classif.rpart"))), 
+#                     dummy.classes=c("numeric", "factor"), 
+#                     dummy.type="numeric")
+```
+
+# Feature Engineering
+
+## Outlier Removal by Capping
+```{r cache=T, message=FALSE, warning=F}
+# remove outliers from variables 
+# threshold=MAX
+cd <- capLargeValues(imp_train, target="Loan_Status", cols=c("ApplicantIncome"), threshold=40000)
+cd <- capLargeValues(cd, target="Loan_Status", cols=c("CoapplicantIncome"), threshold=21000)
+cd <- capLargeValues(cd, target="Loan_Status", cols=c("LoanAmount"), threshold=20)
+
+# rename the train data as cd_train
+cd_train <- cd
+
+# add a dummy Loan_Status column in test data
+imp_test$Loan_Status <- sample(0:1, size=367, replace=T)
+
+cde <- capLargeValues(imp_test, target="Loan_Status", cols=c("ApplicantIncome"), threshold=33000)
+cde <- capLargeValues(cde, target="Loan_Status", cols=c("CoapplicantIncome"), threshold=16000)
+cde <- capLargeValues(cde, target="Loan_Status", cols=c("LoanAmount"), threshold=470)
+
+# renaming test data
+cd_test <- cde
+```
+
+```{r cache=T, warning=F}
+# dummy variables into categorical variables
+for (f in names(cd_train[, c(14:20)])) {
+    if( class(cd_train[, c(14:20)] [[f]]) == "numeric"){
+        levels <- unique(cd_train[, c(14:20)][[f]])
+        cd_train[, c(14:20)][[f]] <- as.factor(factor(cd_train[, c(14:20)][[f]], levels=levels))
+        }
+}
+
+# convert numeric to factor - test
+for (f in names(cd_test[, c(13:18)])) {
+    if( class(cd_test[, c(13:18)] [[f]]) == "numeric"){
+        levels <- unique(cd_test[, c(13:18)][[f]])
+        cd_test[, c(13:18)][[f]] <- as.factor(factor(cd_test[, c(13:18)][[f]], levels=levels))
+        }
+}
+```
+
+
+These loops say - 'for every column name which falls column number 14 to 20 of cd_train / cd_test data frame, if the class of those variables in numeric, take out the unique value from those columns as levels and convert them into a factor (categorical) variables.
+
+## New Features  
+```{r cache=T, message=FALSE, warning=F}
+# Total_Income
+cd_train$Total_Income <- cd_train$ApplicantIncome + cd_train$CoapplicantIncome
+cd_test$Total_Income <- cd_test$ApplicantIncome + cd_test$CoapplicantIncome
+
+# Income by loan
+cd_train$Income_by_loan <- cd_train$Total_Income/cd_train$LoanAmount
+cd_test$Income_by_loan <- cd_test$Total_Income/cd_test$LoanAmount
+
+# change variable class
+cd_train$Loan_Amount_Term <- as.numeric(cd_train$Loan_Amount_Term)
+cd_test$Loan_Amount_Term <- as.numeric(cd_test$Loan_Amount_Term)
+
+# Loan amount by term
+cd_train$Loan_amount_by_term <- cd_train$LoanAmount/cd_train$Loan_Amount_Term
+cd_test$Loan_amount_by_term <- cd_test$LoanAmount/cd_test$Loan_Amount_Term
+```
+
+New variables must be uncorrelated with existing variables
+    - check the correlation
+    
+```{r cache=T}
+# splitting the data based on class
+az <- split(names(cd_train), sapply(cd_train, function(x){ class(x)}))
+
+# creating a data frame of numeric variables
+xs <- cd_train[az$numeric]
+
+# check correlation
+cor(xs)
+
+# new variable has high correlation, so remove them
+cd_train$Total_Income <- NULL
+cd_test$Total_Income <- NULL
+
+summarizeColumns(cd_train)
+summarizeColumns(cd_test)
+```
+
+TODO
+    - Keep create new features then correlation check
+
+
+# Machine Learning
+```{r cache=T, message=FALSE, warning=F}
+# create a task
+trainTask <- makeClassifTask(data=cd_train, target="Loan_Status", positive="Y")
+
+# selecting top 6 important features
+set.seed(1)
+trainTask <- filterFeatures(trainTask, method="rf.importance", abs=6)
+
+cd_test <- cd_test[, c("ApplicantIncome", "CoapplicantIncome", "Credit_History", "Property_Area", "Income_by_loan","Married", "Loan_Status")]
+testTask <- makeClassifTask(data=cd_test, target="Loan_Status")
+
+# normalize the variables
+trainTask <- normalizeFeatures(trainTask, method="standardize")
+testTask <- normalizeFeatures(testTask, method="standardize")
+
+# remove the variables which are not required.
+# trainTask <- dropFeatures(task=trainTask, features=c("Loan_ID", "Married.dummy"))
+
+str(getTaskData(trainTask))
+str(getTaskData(testTask))
+```
+
+## Feature Importance
+```{r cache=T, message=FALSE, warning=F}
+#Feature importance
+im_feat <- generateFilterValuesData(trainTask, method=c("information.gain", "chi.squared"))
+plotFilterValues(im_feat, n.show=20)
+
+# to launch its shiny application
+# plotFilterValuesGGVIS(im_feat)
+```
+
+## QDA
+qda is a parametric algorithm which makes certain assumptions about data.  
+If the data is actually found to follow the assumptions, such algorithms sometime outperform several non-parametric algorithms. 
+
+```{r cache=T, message=FALSE, warning=F}
+# load qda
+qda.learner <- makeLearner("classif.qda", predict.type="response")
+
+# train model
+qmodel <- train(qda.learner, trainTask)
+
+# predict on test data
+qpredict <- predict(qmodel, testTask)
+# 
+# # create submission file
+# submit <- data.frame(Loan_ID=test$Loan_ID, Loan_Status=qpredict$data$response)
+# write.csv(submit, "submit1.csv", row.names=F)
+```
+
+## Logistic Regression
+### Cross Validation
+```{r cache=T, message=FALSE, warning=F, results = "hide"}
+# logistic regression
+logistic.learner <- makeLearner("classif.logreg", predict.type="response")
+
+# cross validation (cv) accuracy
+cv.logistic <- crossval(learner=logistic.learner, task=trainTask, iters=3, stratify=TRUE, measures=acc, show.info=F)
+```
+
+```{r cache=T}
+# cross validation accuracy
+cv.logistic$aggr
+cv.logistic$measures.test
+```
+
+Used stratified sampling with 3 fold CV.  
+- Stratified sampling in classification problems works great, since it maintains the proportion of target class in n folds. 
+
+### Build Model
+```{r cache=T}
+# train model
+fmodel <- train(logistic.learner, trainTask)
+getLearnerModel(fmodel)
+
+# predict on test data
+fpmodel <- predict(fmodel, testTask)
+
+# #create submission file
+# submit <- data.frame(Loan_ID=test$Loan_ID, Loan_Status=fpmodel$data$response)
+# write.csv(submit, "submit2.csv", row.names=F)
+```
+
+
+## Decision Tree
+### Cross Validation
+```{r cache=T, message=FALSE, warning=F, results = "hide"}
+getParamSet("classif.rpart")
+
+# make tree learner
+makeatree <- makeLearner("classif.rpart", predict.type="response")
+
+# set 3 fold cross validation
+set_cv <- makeResampleDesc("CV", iters=3L)
+
+# Search for hyperparameters
+gs <- makeParamSet(makeIntegerParam("minsplit", lower=10, upper=50), 
+                   makeIntegerParam("minbucket", lower=5, upper=50), 
+                   makeNumericParam("cp", lower=0.001, upper=0.2))
+
+# grid search
+gscontrol <- makeTuneControlGrid()
+
+# hypertune the parameters
+stune <- tuneParams(learner=makeatree, 
+                    resampling=set_cv, 
+                    task=trainTask, 
+                    par.set=gs, 
+                    control=gscontrol, 
+                    measures=acc)
+``` 
+
+Set 3 parameters.  
+- minsplit : the minimum number of observation in a node for a split to take place.  
+- minbucket : the minimum number of observation in terminal nodes.  
+- cp : the complexity parameter. The lesser it is, more in overfitting.  
+
+```{r cache=T}
+# check best parameter
+stune$x
+
+# cross validation result
+stune$y
+```
+
+### Bulid Model
+```{r cache=T}
+# using hyperparameters for modeling
+t.tree <- setHyperPars(makeatree, par.vals=stune$x)
+
+# train the model
+t.rpart <- train(t.tree, trainTask)
+getLearnerModel(t.rpart)
+
+# make predictions
+tpmodel <- predict(t.rpart, testTask)
+
+# # create a submission file
+# submit <- data.frame(Loan_ID=test$Loan_ID, Loan_Status=tpmodel$data$response)
+# write.csv(submit, "submit3.csv", row.names=F)
+```
+
+result:  
+    - Decision Tree is doing no better than logistic regression.   
+    - This algorithm has returned the same accuracy of 79.14% as of logistic regression.   
+    
+## Random Forest
+
+Random Forest's prediction derive from an ensemble of trees.  It averages the prediction given by each tree and produces a generalized result. 
+This time I've done random search instead of grid search for parameter tuning, because it's faster.
+
+### Cross Validation
+```{r cache=T, message=FALSE, warning=F, results = "hide"}
+getParamSet("classif.randomForest")
+
+# create a learner
+rf <- makeLearner("classif.randomForest", predict.type="response", par.vals=list(ntree=200, mtry=3))
+rf$par.vals <- list(importance=TRUE)
+
+# set tunable parameters
+# grid search to find hyperparameters
+rf_param <- makeParamSet(makeIntegerParam("ntree", lower=50, upper=500), 
+                         makeIntegerParam("mtry", lower=3, upper=10), 
+                         makeIntegerParam("nodesize", lower=10, upper=50))
+
+#  random search for 50 iterations
+rancontrol <- makeTuneControlRandom(maxit=50L)
+
+# set 3 fold cross validation
+set_cv <- makeResampleDesc("CV", iters=3L)
+
+# hypertuning
+rf_tune <- tuneParams(learner=rf, resampling=set_cv, task=trainTask, par.set=rf_param, control=rancontrol, measures=acc)
+```
+
+```{r cache=T}
+#best parameters
+rf_tune$x
+
+# cv accuracy
+rf_tune$y
+```
+
+### Build Model
+```{r cache=T}
+# using hyperparameters for modeling
+rf.tree <- setHyperPars(rf, par.vals=rf_tune$x)
+
+# train a model
+rforest <- train(rf.tree, trainTask)
+getLearnerModel(t.rpart)
+
+# make predictions
+rfmodel <- predict(rforest, testTask)
+
+# # submission file
+# submit <- data.frame(Loan_ID=test$Loan_ID, Loan_Status=rfmodel$data$response)
+# write.csv(submit, "submit4.csv", row.names=F)
+```
+
+## SVM
+
+SVM creates a hyperplane in n dimensional space to classify the data based on target class. 
+
+### Cross Validation
+```{r cache=T, message=FALSE, warning=F, results = "hide"}
+# load svm
+getParamSet("classif.ksvm") # install kernlab package 
+ksvm <- makeLearner("classif.ksvm", predict.type="response")
+
+# Set parameters
+pssvm <- makeParamSet(makeDiscreteParam("C", values=2^c(-8, -4, -2, 0)), # cost parameters
+                      makeDiscreteParam("sigma", values=2^c(-8, -4, 0, 4))) # RBF Kernel Parameter
+
+# specify search function
+ctrl <- makeTuneControlGrid()
+
+# tune model
+res <- tuneParams(ksvm, task=trainTask, resampling=set_cv, par.set=pssvm, control=ctrl, measures=acc)
+```
+
+```{r cache=T}
+# CV accuracy
+res$y
+```
+
+
+### Build Model
+```{r cache=T, message=FALSE, warning=F}
+#set the model with best params
+t.svm <- setHyperPars(ksvm, par.vals=res$x)
+
+#train
+par.svm <- train(ksvm, trainTask)
+
+#test
+predict.svm <- predict(par.svm, testTask)
+
+# #submission file
+# submit <- data.frame(Loan_ID=test$Loan_ID, Loan_Status=predict.svm$data$response)
+# write.csv(submit, "submit5.csv", row.names=F)
+```
+
+
+## GBM (Gradient Boosting)
+
+GBM performs sequential modeling i.e after one round of prediction, it checks for incorrect predictions, assigns them relatively more weight and predict them again until they are predicted correctly.
+
+### Cross Validation
+```{r cache=T, message=FALSE, warning=F, results = "hide"}
+# load GBM
+getParamSet("classif.gbm")
+g.gbm <- makeLearner("classif.gbm", predict.type="response")
+
+# specify tuning method
+rancontrol <- makeTuneControlRandom(maxit=50L)
+
+# 3 fold cross validation
+set_cv <- makeResampleDesc("CV", iters=3L)
+
+# parameters
+gbm_par<- makeParamSet(makeDiscreteParam("distribution", values="bernoulli"), 
+                       makeIntegerParam("n.trees", lower=100, upper=1000), # number of trees
+                       makeIntegerParam("interaction.depth", lower=2, upper=10), # depth of tree
+                       makeIntegerParam("n.minobsinnode", lower=10, upper=80), # min # of observations in a node
+                       makeNumericParam("shrinkage", lower=0.01, upper=1)) # ragulation param. which dictates how fast / slow the algorithm.
+
+# tune parameters
+tune_gbm <- tuneParams(learner=g.gbm, task=trainTask, resampling=set_cv, measures=acc, par.set=gbm_par, control=rancontrol)
+```
+
+```{r cache=T}
+# check CV accuracy
+tune_gbm$y
+```
+
+### Build Model
+```{r cache=T, message=FALSE, warning=F}
+#set parameters
+final_gbm <- setHyperPars(learner=g.gbm, par.vals=tune_gbm$x)
+
+#train
+to.gbm <- train(final_gbm, trainTask)
+
+#test 
+pr.gbm <- predict(to.gbm, testTask)
+
+# #submission file
+# submit <- data.frame(Loan_ID=test$Loan_ID, Loan_Status=pr.gbm$data$response)
+# write.csv(submit, "submit6.csv", row.names=F)
+```
+
+
+## XGBoost (Extreme Gradient Boosting)
+
+- Xgboost is better than GBM due to its inbuilt properties including first and second order gradient, parallel processing and ability to prune trees. 
+- xgboost in 'mlr' packages does not requires matrix fomat input.
+
+### Cross Validation
+```{r cache=T, message=FALSE, warning=F, results = "hide"}
+# load xgboost
+set.seed(1001)
+getParamSet("classif.xgboost")
+
+#make learner with inital parameters
+xg_set <- makeLearner("classif.xgboost", predict.type="response")
+xg_set$par.vals <- list(objective="binary:logistic", eval_metric="error", nrounds=250)
+
+#define parameters for tuning
+xg_ps <- makeParamSet(makeIntegerParam("nrounds", lower=200, upper=600), 
+                      makeIntegerParam("max_depth", lower=3, upper=20), 
+                      makeNumericParam("lambda", lower=0.55, upper=0.60), 
+                      makeNumericParam("eta", lower=0.001, upper=0.5), 
+                      makeNumericParam("subsample", lower=0.10, upper=0.80), 
+                      makeNumericParam("min_child_weight", lower=1, upper=5), 
+                      makeNumericParam("colsample_bytree", lower=0.2, upper=0.8))
+
+# define search function
+rancontrol <- makeTuneControlRandom(maxit=100L) #do 100 iterations
+
+# 3 fold cross validation
+set_cv <- makeResampleDesc("CV", iters=3L)
+
+# tune parameters
+xg_tune <- tuneParams(learner=xg_set, task=trainTask, resampling=set_cv, measures=acc, par.set=xg_ps, control=rancontrol)
+```
+
+```{r cache=T}
+# accuracy
+xg_tune$y
+```
+
+### Build Model
+```{r cache=T, message=FALSE, warning=F, results = "hide"}
+# set parameters
+xg_new <- setHyperPars(learner=xg_set, par.vals=xg_tune$x)
+
+# train model
+xgmodel <- train(xg_new, trainTask)
+
+# test model
+predict.xg <- predict(xgmodel, testTask)
+
+# # submission file
+# submit <- data.frame(Loan_ID=test$Loan_ID, Loan_Status=predict.xg$data$response)
+# write.csv(submit, "submit7.csv", row.names=F)
+```
+
+Terrible XGBoost. This model returns an accuracy of 68.5%, even lower than qda. Overfitting issue

@@ -1,0 +1,26 @@
+body {
+  padding: 50px;
+  font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
+}
+
+a {
+  color: #00B7FF;
+}
+
+@CHARSET "UTF-8";
+.add {
+  background-color: #4CAF50; //green
+color: white;
+  padding: 0px 0px;
+  text-align: center;
+  display: inline-block;
+  font-size: 12px;
+}
+.remove {
+  background-color: #f44336; // red
+color: white;
+  padding: 1px 1px;
+  text-align: center;
+  display: inline-block;
+  font-size: 12px;
+}

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title> Humanitarian Resources </title>
+</head>
+<body>
+<nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#collapse-links">
+                <span class="sr-only">toggle bar</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+        </div>
+        <div class="collapse navbar-collapse" id="collapse-links">
+            <div class="btn-group nav navbar-nav">
+                <button ng-click="signup()" class="btn btn-success">My Resources</button>
+                <button ng-click="clientService()" class="btn btn-success">Client Services</button>
+                <button ng-click="signup()" class="btn btn-success">Availible Resources</button>
+                <button ng-click="signup()" class="btn btn-success">Organizations</button>
+                <button ng-click="signup()" class="btn btn-success">Events</button>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<div class="container">
+    <div class="row"> <h2>YMCA-Metro St. Louis</h2></div>
+    <div class="row">
+        <div class="col-md-8">
+            <br/><br/>
+            <form method="post" id="resources">
+                <table class="table table-hover" id="orgTable" onload="getData()">
+                    <thead>
+                    <th>Resource</th>
+                    <th>Description</th>
+                    <th>Qty Available</th>
+                    <th>Qty Total</th>
+                    <th>&#43; &#47; &#45;</th>
+                    </thead>
+                    <tr ng-repeat="resource in results" ng-model="results[$index]">
+                        <td> <input ng-model="results[$index].Type" type="text" value={[{resource.Type}]} /></td>
+                        <td> <input ng-model="results[$index].Description" type="text" value={[{resource.Description}]} /> </td>
+                        <td> <input ng-model="results[$index].NumUsed" type="text" value={[{resource.NumUsed}]} /> </td>
+                        <td> <input ng-model="results[$index].NumTotal" type="text" value={[{resource.NumTotal}]} /> </td>
+                        <td> <button ng-click="removeRow()" class="btn btn-danger">remove</button></td>
+                    </tr>
+                    <tr>
+                        <td> <input type="text" /> </td>
+                        <td> <input type="text" /> </td>
+                        <td> <input type="text" /> </td>
+                        <td> <input type="text" /> </td>
+                        <td> <button ng-click="removeRow()" class="btn btn-success">add</button></td>
+                    </tr>
+                </table>
+            </form>
+            <button ng-click="getData()">Cancel Changes</button>
+            <button ng-click="updateData(results)">Save Values</button>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title> Humanitarian Resources </title>
+</head>
+<body>
+<nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#collapse-links">
+                <span class="sr-only">toggle bar</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+        </div>
+        <div class="collapse navbar-collapse" id="collapse-links">
+            <div class="btn-group nav navbar-nav">
+                <button ng-click="signup()" class="btn btn-success">My Resources</button>
+                <button ng-click="signup()" class="btn btn-success">Client Services</button>
+                <button ng-click="signup()" class="btn btn-success">Availible Resources</button>
+                <button ng-click="signup()" class="btn btn-success">Organizations</button>
+                <button ng-click="signup()" class="btn btn-success">Events</button>
+            </div>
+        </div>
+    </div>
+</nav>
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <div id="resource_map_container">
+                <iframe id="resource_map" src="http://rstudio-pubs-static.s3.amazonaws.com/220964_823383386196441f8efafa1efdcd65e6.html"
+                        style="border: none; width: 100%; height: 1500px" frameborder="0" scrolling="yes"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

@@ -1,6 +1,0 @@
-Best Practice for Andorid Development.pdf
-Developing Powerful Predictive Models.pdf
-filelist.txt
-Journey to Kaggle Competition.pdf
-Mixture models and EM.pdf
-NLP for Next Word-Auto-Completion.pdf

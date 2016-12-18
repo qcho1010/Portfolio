@@ -1,0 +1,815 @@
+---
+title: "Ensemble learning with feature selection for Alzheimer's disease prediction"
+author: "Kyu S. Cho"
+date: "December 15, 2016"
+output: html_document
+---
+
+<div style="width:250px; height=200px">
+![](./pic/dz.jpeg)
+</div>
+
+
+# Challenge
+
+The enigma that is Alzheimer's disease (AD) continues to present daunting challenges for effective therapeutic intervention. The lack of disease-modifying therapies may, in part, be attributable to the narrow research focus employed to understand this complex disease.  
+
+Most studies into disease pathogenesis are based on a priori assumptions about the role of AD lesion-associated proteins such as amyloid-beta and tau.   
+However, the complex disease processes at work may not be amenable to single-target therapeutic approaches. Genome-wide expression studies provide an unbiased approach for investigating the pathogenesis of complex diseases like AD.  
+
+Advanced machine learning algorithms and the dimensionality reduction algorithms are employed to understand the regulatory networks of differentially expressed genes.Data has more than 8,500 genes are differentially altered in AD micro-vessels and that a large number of these genes map to pathways associated with immune and inflammatory response, signal transduction, and nervous system development and function categories.   
+
+Class prediction models have been shown to have varying performances in clinical gene expression datasets. The accuracy of class prediction models differs from dataset to dataset and depends on the type of classification models. While a substantial amount of information is known about the characteristics of classification functions, little has been done to determine which characteristics of gene expression data have impact on the performance of a classifier. Gene expression is an important aspect of many genetic diseases in the context of genetic disorders as the disorder affects only few gene expressions. Therefore, gene-expression is important in identifying disease-gene associations. Hence this paper focuses on building a classification models that accurately predicts the Alzheimer's disease (AD) using machine learning technique called ensemble learning and feature selection algorithms to find out those few disease-gene-expressions.
+
+ In order to build the powerful and consistent predictive model, it"s important to select right combination of models and right combination of important features.  Combining multiple predictive model usually gives better performance. 
+
+# Data
+- Data contains 8561 different gane expressions and 364 individual with 176 casees and 188 controls.  
+- Gene expression is the process by which information from a gene is used in the synthesis of a functional gene product.  
+
+[**Click to See More about the Data**](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2561161/)
+
+# Table of Contents
+1. Data Transformation
+2. Feature Cleaning  
+    2-1. Split Dataset & Normalization on 'train' data  
+    2-2. Remove Highly Correlated  Features  
+    2-3. Remove Linearly Dependent Features
+3. Feature Engineering  
+    3-1 Cluster
+4. Feature Selection (Dimensionality Reduction)  
+    4-1. Information Gain  
+    4-2. Chi-Squared  
+    4-3. Mean Decrease Gini  
+    4-4. Combine Selected Features
+5. Building Models  
+    5-1. Normalization on 'test' data  
+    5-2. Performance Measurement  
+    5-3. logistic regression (base model)  
+    5-4. xgboost  
+    5-5. randomforest  
+    5-6. rpart  
+    5-7. gausspr  
+    5-8. svm  
+    5.9. Ensemble Learning
+6. Result
+7. Feature Exploration
+8. Conclusion and Future Improvement  
+
+# 1. Data Transformation
+Data preprocessing is required to properly feed data to each machine learning algorithms. In addition, the performance of the machine learning algorithm is heavily dependent on the quality of the data. [20] The format of gene expression dataset is not the best format to be fitted into the algorithms, thus data transformation has been performed. This gene expression dataset is formatted as row (gene expression) x column (individual); however, it needs to formatted as row (individual) x column (gene expression).   
+
+```{r cache=T, warning=F}
+# Load Data
+path <- getwd()
+setwd(path)
+case <- read.csv("case.csv", header=F, na.strings=c(" ", "", "<NA>", "NA"))
+ctrl <- read.csv("ctrl.csv", header=F, na.strings=c(" ", "", "<NA>", "NA"))
+
+# [case]
+case_features <- case[3:nrow(case), 1] # extract the features
+case <- case[3:nrow(case), -1] # extract the values only
+case <- as.data.frame(t(case)) # transpose the dataframe
+
+# add columne name
+rownames(case) <- NULL
+colnames(case) <- case_features
+case$result <- 1
+
+# [ctrl]
+ctrl_features <- ctrl[3:nrow(ctrl), 1] # extract the features
+ctrl <- ctrl[3:nrow(ctrl), -1] # extract the values only
+ctrl <- as.data.frame(t(ctrl)) # transpose the dataframe
+
+# add columne name
+rownames(ctrl) <- NULL
+colnames(ctrl) <- ctrl_features
+ctrl$result <- 0
+
+full <- rbind(case, ctrl) # combind two dataset
+# change factor variables into numeric
+full <- data.frame(lapply(full, function(x) as.numeric(as.character(x)))) 
+
+# library(mice)
+#  # perform mice imputation, based on random forests.
+# miceMod <- full(full[, !names(full) %in% "result"], method="rf") 
+# miceOutput <- complete(miceMod)  # generate the completed data.
+# anyNA(miceOutput)
+
+# fill missing values with mean
+for(i in 1:ncol(full)){
+  full[is.na(full[, i]), i] <- mean(full[,i], na.rm=TRUE)
+}
+
+# add result and remove old dataset to save memory
+full$result <- factor(full$result)
+rm(case)
+rm(ctrl)
+
+# display the result
+dim(full)
+head(full[,(ncol(full)-3):ncol(full)])
+tail(full[,(ncol(full)-3):ncol(full)])
+table(full$result)
+```
+
+- As we see in the dataset, I added column call "result" 1 for individual with alzheimer's disease and 0 for without alzheimer's disease.  
+
+# 2. Feature Cleaning
+
+Feature selection technique must be perform in this case with following reasons:  
+
+1. inputing over 8500 features may takes too much times to train for some machine learning algorithms
+2. simplification of models to make them easier to interpret by researchers/users
+3. enhanced generalization by reducing overfitting(formally, reduction of variance)
+4. the data may contains many features that are either redundant(strongly correlated, linearly dependent) or irrelevant
+    - these features can be removed without incurring much loss of information
+
+## 2-1. Split Dataset and Perform Normalization
+
+Before we perform any feature selection teachniques, we need to normalize the 'train' data by subtracting the mean and dividing by the standard deviation so that each features does get equal basis.
+
+```{r cache=T, message=FALSE}
+library(caret)
+library(caTools)
+set.seed(5465)
+split <- sample.split(full$result, SplitRatio=0.8)
+train <- subset(full, split==TRUE)
+test <- subset(full, split==FALSE)
+table(train$result)
+table(test$result)
+
+target <- 'result'
+predictors <- setdiff(names(train), target)
+
+# normalize data
+train_nom <- preProcess(train[ ,predictors], method=c("center", "scale")) 
+train_scaled <- predict(train_nom, train)
+train_scaled$result <- train$result
+saveRDS(train_nom, file="scale.rds")
+```
+
+## 2-2. Remove Highly Correlated Features
+Feature selection / dimensionality reduction is widely used to improve models"accuracy scores or to boost their performance on very high-dimensional datasets. Feature selection technique must be performing in this case with following reasons: [4]
+    1. Inputting over 8500 features may takes too much times to train for some machine learning algorithms.
+    2. Simplification of models to make them easier to interpret by researchers/users.
+    3. Enhanced generalization by reducing overfitting (formally, reduction of variance).
+    4. The data may contain many features that are either redundant (strongly correlated, linearly dependent) or irrelevant.
+These features can be removed without incurring much loss of information
+
+Multicollinearity (also collinearity) is a phenomenon in which two or more predictor variables in a multiple regression model are highly correlated, meaning that one can be linearly predicted from the others with a substantial degree of accuracy. [5]
+     Pearson correlation is used to find linear correlation between two variables X and Y. In short it is the covariance of the two variables divided by the product of their standard deviations:
+     The result is a value between +1 and −1 inclusive, where 1 is total positive correlation, 0 is no correlation, and −1 is total negative correlation. [6] Multi-collinearity does not reduce the predictive power or reliability of the model as a whole, at least within the "train"data set. thus, all the features that shows more than 80% of correlation are removed. From this correlated test, the number of more than 80% correlated features is 1,536 and the number of linearly dependent features is 6,736 after removing correlated features resulting 287 features remained out of 8,561 features.
+     
+```{r cache=T}
+target <- 'result'
+predictors <- setdiff(names(train_scaled), target)
+
+# Remove highly correlated predictors
+train_corr <- cor(train_scaled[ ,predictors])
+train_high_corr_v <- findCorrelation(train_corr, cutoff=.8)
+train_low_corr <- train_scaled[ ,-c(train_high_corr_v)]
+train_cleaned <- train_low_corr
+rm(train_low_corr)
+print(paste0("Number of more than 80% correlated columns : ", length(train_high_corr_v)))
+```
+
+- Out of over 8560 features, we found that 1536 features shows high correlationn which can be removed; thus we are left with 7024 features.   
+
+## 2-3. Remove Linearly Dependent Features
+
+With same reason as removing highly correlated features, we need to remove linearly dependent features as well.  
+
+```{r cache=T}
+# Check if there are linear dependecies
+predictors <- setdiff(names(train_cleaned), target)
+linear_dep_v <- findLinearCombos(train_cleaned[ ,predictors])
+train_no_ld <- train_cleaned[, -c(linear_dep_v$remove)]
+train_cleaned <- train_no_ld
+train_cleaned$result <- as.factor(train$result)
+rm(train_no_ld)
+print(paste0("Number of linearly dependent columns : ", length(linear_dep_v$remove)))
+```
+
+-  Out of 7024 features, we found that 6737 features show linear dependency which can be removed; thus we are left with 287 features.  
+-  I also performed removing zero variance feature technique, but it does not have any features with zero variance.  
+
+# 3. Feature Engineering
+## 3-1 Cluster
+
+- Sometime, adding the cluster feature imporves the performance of the model
+    + But adding cluster feature did get worse accuracy, so I'm commenting this out
+    + I've used K-mean clustering algorithm and adding 'cluster' column.  
+
+```{r cahce=T}
+# library(flexclust)
+# target <- 'result'
+# predictors <- setdiff(names(train_cleaned), target)
+# 
+# wss <- (nrow(train_cleaned)-1) * sum(apply(train_cleaned[ ,predictors], 2, var))
+# for (i in 2:15) {
+#      wss[i] <- sum(kmeans(train_cleaned, centers=i)$withinss)
+# }
+# 
+# plot(1:15, wss, type="b", xlab="Number of Clusters",ylab="Within groups sum of squares")
+# 
+# k=3
+# set.seed(10)
+# KmeansCluster <- kmeans(train_cleaned, centers=k)
+# train_cleaned$cluster <- as.factor(KmeansCluster$cluster)
+# 
+# # Dummify the variables
+# dummies <- dummyVars("~ cluster", data=train_cleaned, fullRank = T)
+# dummies.df <- as.data.frame(predict(dummies, train_cleaned))
+# train_cleaned$cluster <- NULL
+# train_cleaned <- cbind(train_cleaned, dummies.df)
+```
+
+# 4. Feature Selection
+## 4-1. Information Gain
+
+The entropy characterizes the impurity of an arbitrary collection of samples. Information Gain is the expected reduction in entropy caused by partitioning the samples according to a given feature which is the way of measuring association between inputs and outputs. [7] Thus, higher the information gain is the better.  
+- features with information gain value above 0.03 are selected for the future analysis.  
+
+```{r cache=T, message=FALSE}
+library(mlr)
+library(FSelector)
+library(randomForestSRC)
+train.task <- makeClassifTask(data=train_cleaned, target="result")
+
+imp_var1 <- generateFilterValuesData(train.task, method=c("information.gain"))
+var1 <- imp_var1$data[imp_var1$data$information.gain > 0.03, c('name')]
+plot_infogain <- plotFilterValues(imp_var1, feat.type.cols=TRUE)
+plot_infogain
+```
+
+## 4-2. Chi-Squared
+
+Pearson's chi-squared test (χ2) is a statistical test applied to sets of categorical data to evaluate how likely it is that any observed difference between the sets arose by chance and to test the independence of two events, in another words, it is used to test whether the occurrence of a specific term and the occurrence of a specific class are independent. [8] Thus after estimating the following quantity for each term and features are ranked by the score.  Higher scores indicate that the null hypothesis (H0) of independence should be rejected and thus that the occurrence of the term and class are dependent. If they are dependent, then those features are selected.  
+- features with chi squared value above 0.24 are selected for the future analysis.
+
+```{r cache=T, message=FALSE}
+imp_var2 <- generateFilterValuesData(train.task, method=c("chi.squared"))
+var2 <- imp_var2$data[imp_var2$data$chi.squared > 0.24, c('name')]
+plot_chi <- plotFilterValues(imp_var2, feat.type.cols=TRUE)
+plot_chi
+```
+
+## 4-3. Mean Decrease Gini
+
+The mean decrease in Gini coefficient is a measure of how each variable contributes to the homogeneity of the nodes and leaves in the resulting random forest. [9] Each time a particular variable is used to split a node, the Gini coefficient for the child nodes are calculated and compared to that of the original node. The Gini coefficient is a measure of homogeneity from 0 (homogeneous) to 1 (heterogeneous).  
+The changes in Gini are summed for each variable and normalized at the end of the calculation. Variables that result in nodes with higher purity have a higher decrease in Gini coefficient.  - features with mean decreased Gini value above 0.001 are selected for the future analysis.
+ 
+```{r cache=T, message=FALSE}
+set.seed(7)
+imp_var3 <- generateFilterValuesData(train.task, method=c("rf.importance"))
+var3 <- imp_var3$data[imp_var3$data$rf.importance > 0.001, c('name')]
+plot_rf <- plotFilterValues(imp_var3, feat.type.cols=TRUE)
+plot_rf
+```
+
+## 4-4. Combine Selected Features
+
+Now, I'm going to combine all the top values from each tests.
+
+```{r cache=T}
+imp_cols <- c(var1, var2, var3)
+imp_cols <- unique(imp_cols)
+length(imp_cols)
+saveRDS(imp_cols, file="imp_cols.rds")
+
+train_cleaned <- train_cleaned[ ,c(imp_cols, "result")]
+dim(train_cleaned)
+```
+
+After performing various feature cleaning / selection techniques, resulting number of important features are 30.  Which is significant amount of dimensionality reduction from over 8,500 features.  Those 30 features are used for building predictive model.
+ 
+ 
+# 5. Building Models
+## 5-1. Perform Normalization on Testset
+ In order to build the ensemble learning model, which is combination of multiple models with weights on each models, it requires various types of models. In this study, logistic regression (regression type), extreme gradient boosting (boosting type), random forest (ensemble type), recursive partitioning (tree base type), Gaussian processes (Bayesian based type), and support vector machine (coordinate based type) are used.  
+ 
+ 
+- Since, we already performed the normalization on 'train' set, 'test' set must be noramlized as well.  
+
+```{r cache=T}
+# normalize data
+test_cleaned <- predict(train_nom, test)
+test_cleaned <- test_cleaned[ ,names(train_cleaned)]
+dim(test_cleaned)
+
+# classification task
+train.task <- makeClassifTask(data=train_cleaned, target="result")
+test.task <- makeClassifTask(data=test_cleaned, target="result")
+```
+
+
+## 5-2. Performance Measure
+
+Learning the parameters of a prediction function and testing it on the same data is a methodological mistake: a model that would just repeat the labels of the samples that it has just seen would have a perfect score but would fail to predict anything useful on yet-unseen data. This situation is called overfitting. [21] In this study uses cross-validation (CV) to avoid the overfitting problem and     uses accuracy and area under the curve (AUC) for the performance measurement.
+
+**Accuracy**  
+
+- Each prediction has two values, one is the probability of having a disease which is '1' another value is the probability of not having a disease which is '0'
+    - The accuracy is based on 0.5 threshold, meaning if the value has 0.5 than it is '1' otherwise '0'.
+    - 0.5 threshold assuming that the cost of false positive and false negative is equal.  
+    
+
+**AUC (Area Under the Curve)**  
+
+- The area under the curve is a measure of the accuracy based on ROC curve. An ROC curve demonstrates several things:  
+    1. It shows the tradeoff between sensitivity and specificity (any increase in sensitivity will be accompanied by a decrease in specificity).
+    2. The closer the curve follows the left-hand border and then the top border of the ROC space, the more accurate the test.
+    3. The closer the curve comes to the 45-degree diagonal of the ROC space, the less accurate the test.
+
+
+**CV (Cross-Validation)**  
+
+<div style="width:250px; height=200px">
+![](./pic/cv.png)  
+</div>  
+
+- Learning the parameters of a prediction function and testing it on the same data is a methodological mistake: a model that would just repeat the labels of the samples that it has just seen would have a perfect score but would fail to predict anything useful on yet-unseen data. 
+- This situation is called overfitting. A solution to this problem is a procedure called cross-validation (CV for short). A test set should still be held out for final evaluation, but the validation set is no longer needed when doing CV. In the basic approach, called k-fold CV, the training set is split into k smaller sets (other approaches are described below, but generally follow the same principles). 
+
+- The following procedure is followed for each of the k “folds":
+    + A model is trained using k=5 of the folds as training data;
+    + the resulting model is validated on the remaining part of the data (i.e., it is used as a test set to compute a performance measure such as accuracy).
+- The performance measure reported by k-fold cross-validation is then the average of the values computed in the loop. 
+- This approach can be computationally expensive, but does not waste too much data (as it is the case when fixing an arbitrary test set), which is a major advantage in problem such as inverse inference where the number of samples is very small.
+
+## 5-3. logistic regression (base model)
+
+Before building such powerful model, building base model is essential to compare the performance of the newly built model. Logistic regression model is one of the classification model that performs appropriate regression analysis to conduct when the dependent variable is dichotomous (binary). 
+- It is used to describe data and to explain the relationship between one dependent binary variable and one or more metric (interval or ratio scale) independent variables. [10] Thus, this paper uses it as base model.
+
+<div style="width:250px; height=200px">
+![](./pic/glm.png)
+</div>
+
+```{r cache=T, message=FALSE}
+# Build Model
+learner_logreg <- makeLearner("classif.logreg", predict.type="prob")
+model_logreg <- train(learner_logreg, train.task)
+saveRDS(model_logreg, file="model_logreg.rds") # save model
+
+# Prediction and Evaluation
+pred_logreg <- predict(model_logreg, test.task)
+acc_logreg <- confusionMatrix(pred_logreg$data$response, test$result)$overall["Accuracy"]
+auc_logreg <- mlr::performance(pred_logreg, auc)
+print(paste0("logreg accuracy : ", round(acc_logreg, 3)))
+print(paste0("logreg AUC : ", round(auc_logreg, 3)))
+```
+
+- The accuracy of logistic regression model is a bit better than randomly choose one, which has 50% accuracy.  
+
+## 5-4. xgboost
+
+Boosting is an ensemble learning algorithm which combines the prediction of several base estimators in order to improve robustness over a single estimator. It combines multiple weak or average predictors to a build strong predictor. XGBoost is an optimized distributed gradient boosting library designed to be highly efficient, flexible and portable. [11] Since, it implements machine learning algorithms under the Gradient Boosting framework it has both linear model solver and tree learning algorithms; also, it provides a parallel tree boosting that solve many data science problems in a fast and accurate way.  
+     Pros. XGBoost is known as "regularized boosting"technique which is used to avoid over-fitting by introducing a cost term for bringing in more features with the objective function.  Hence, it tries to push the coefficients for many variables to zero and hence reduce cost term. [12]  In addition, it supports various objective functions, including regression, classification and ranking.   
+     Cons.  Introducing regularization parameter to user is another deciding factor variable, faulty variables can bring the overfitting problem as well. Beside regularization parameter, there are many more parameters which needs to be controlled to optimize the model. 
+
+<div style="width:250px; height=200px">
+![](./pic/xgb.png)
+</div>
+
+```{r cache=T, message=FALSE}
+# getParamSet("classif.xgboost") 
+learner_xgb <- makeLearner("classif.xgboost", predict.type="prob")
+learner_xgb$par.vals <- list(
+    objective="binary:logistic",
+    eval_metric="error",
+    nrounds=150,
+    verbose=0
+)
+
+# set parameters
+ps_xgb <- makeParamSet(
+    makeNumericParam("eta", lower=0.05, upper=1),
+    makeNumericParam("gamma", lower=0.05, upper=1),
+    makeIntegerParam("max_depth",lower=1, upper=30),
+    makeNumericParam("min_child_weight", lower=0.05, upper=10),
+    makeNumericParam("lambda",lower=0.05, upper=1),
+    makeNumericParam("alpha",lower=0.05, upper=1),
+    makeNumericParam("subsample", lower=0.05, upper=1),
+    makeNumericParam("colsample_bytree",lower=0.05,upper=1)
+)
+rancontrol <- makeTuneControlRandom(maxit=20L) # iterations
+set_cv <- makeResampleDesc("CV", iters=5L) # k-fold cross validation
+
+########################### Build ########################### 
+# tune parameters
+set.seed(4) 
+# tune_xgb <- tuneParams(learner=learner_xgb, task=train.task,
+                       # resampling=set_cv, par.set=ps_xgb, control=rancontrol)
+# saveRDS(tune_xgb, file="tune_xgb.rds")
+tune_xgb <- readRDS("tune_xgb.rds")
+print(tune_xgb)
+new_xgb <- setHyperPars(learner=learner_xgb, par.vals=tune_xgb$x) # set optimal parameters
+
+# train model
+acc_xgb <- c()
+for (i in seq(1, 20)) {
+    model_xgb <- train(new_xgb, train.task)
+    pred_xgb <- predict(model_xgb, test.task)
+    conf_xgb <- confusionMatrix(pred_xgb$data$response, test$result)$overall["Accuracy"]
+    acc_xgb <- c(acc_xgb, conf_xgb)
+}
+saveRDS(model_xgb, file="model_xgb.rds") # save model
+
+acc_xgb <- sum(acc_xgb)/20
+auc_xgb <- mlr::performance(pred_xgb, auc)
+print(paste0("xgboost accuracy : ", round(acc_xgb, 3)))
+print(paste0("xgboost AUC : ", round(auc_xgb, 3)))
+```
+
+
+## 5-5. randomforest
+
+Random forest is an ensemble tool which takes a subset of observations and a subset of variables to build a decision trees.  
+It builds multiple such decision tree and amalgamate them together to get a more accurate and stable prediction. It is direct consequence of the fact that by maximum voting from a panel of independent judges, it results the final prediction better than the best judge.   [13]
+Each tree is planted & grown as follows:  
+
+1. If the number of cases in the training set is N, then sample of N cases is taken at random but with replacement. This sample will be the training set for growing the tree.  
+2. If there are M input variables, a number m<<M is specified such that at each node, m variables are selected at random out of the M and the best split on these m is used to split the node. The value of m is held constant during the forest growing.  
+3. Each tree is grown to the largest extent possible. There is no pruning.  
+
+ 
+     Pros.  Random forest is one of the most commonly used algorithm due to its great predictive power, Random forest model are pretty simple to build. [14]  
+     Cons. Although, it gives high performance, users generally don"t understand how they actually work. Not knowing the statistical details of the model is not a concern however not knowing how the model can be tuned well to clone the training data restricts the user to use the algorithm to its full potential. Also, it is very CPU intensive algorithm which can take up quite a long time to get the result.
+ 
+ 
+<div style="width:250px; height=200px">
+![](./pic/rf.png)
+</div>
+
+```{r cache=T, message=FALSE}
+# getParamSet("classif.randomForest") 
+learner_rf <- makeLearner("classif.randomForest", predict.type="prob")
+learner_rf$par.vals <- list(
+     objective="binary:logistic",
+     eval_metric="error",
+     nrounds=150
+)
+
+# set parameters
+ps_rf <- makeParamSet(
+    makeIntegerParam("ntree",lower=100, upper=750),
+    makeIntegerParam("mtry",lower=1, upper=30),
+    makeIntegerParam("sampsize", lower=1, upper=30),
+    makeIntegerParam("nodesize",lower=1,upper=30),
+    makeIntegerParam("maxnodes",lower=1,upper=30)
+)
+rancontrol <- makeTuneControlRandom(maxit=200L) # iterations
+set_cv <- makeResampleDesc("CV", iters=5L) # k fold cross validation
+
+########################### Build ########################### 
+# tune parameters
+set.seed(3333)
+# tune_rf <- tuneParams(learner=learner_rf, task=train.task, 
+                      # resampling=set_cv, par.set=ps_rf, control=rancontrol)
+# saveRDS(tune_rf, file="tune_rf.rds")
+tune_rf <- readRDS("./tune_rf.rds")
+print(tune_rf)
+new_rf <- setHyperPars(learner=learner_rf, par.vals=tune_rf$x) # set optimal parameters
+
+# train model
+acc_rf <- c()
+for (i in seq(1, 20)) {
+    model_rf <- train(new_rf, train.task)
+    pred_rf <- predict(model_rf, test.task)
+    conf_rf <- confusionMatrix(pred_rf$data$response, test$result)$overall["Accuracy"]
+    acc_rf <- c(acc_rf, conf_rf)
+}
+saveRDS(model_rf, file="model_rf.rds") # save model
+
+acc_rf <- sum(acc_rf)/20
+auc_rf <- mlr::performance(pred_rf, auc)
+print(paste0("randomForest accuracy : ", round(acc_rf, 3)))
+print(paste0("randomForest AUC : ", round(auc_rf, 3)))
+```
+
+
+## 5-6. rpart
+
+ Rpart is a statistical method that builds classification or regression models of a very general structure for multivariable analysis which creates a decision tree that strives to correctly 
+classify members of the population by splitting it into sub-populations based on several dichotomous independent variables. [15]  
+The process is termed recursive because each sub-population may in turn be split an indefinite number of times until the splitting process terminates after a particular stopping criterion is reached.  
+Rpart methods have become popular and widely used tools for non-parametric regression and classification in many scientific fields.   
+     Pros.  It is very simple to implement and it is one of the basic tree based algorithm in machine learning.    
+     Cons.  While it is a method that is used extensively throughout the field of pattern recognition, a potential flaw exists. At each splitting node, algorithm observes immediate effects on the children to choose the one which gives us the best purity in the immediate children, instead of looking through each and every possible way to partition meaning that if it chooses a splitting criteria which is not optimal, [16] it might have better choices much later in the tree which it cannot see in the immediate children, meaning increasing the computational time.  Also, this algorithm prunes to overfitting.
+     
+<div style="width:250px; height=200px">
+![](./pic/rp.png)
+</div>
+
+```{r cache=T, message=FALSE}
+# getParamSet("classif.rpart") 
+learner_rp <- makeLearner("classif.rpart", predict.type="prob")
+
+# set parameters
+ps_rp <- makeParamSet(
+    makeIntegerParam("minsplit",lower=1, upper=100),
+    makeIntegerParam("minbucket",lower=1, upper=100),
+    makeNumericParam("cp",lower=.01, upper=1),
+    makeIntegerParam("maxcompete", lower=0, upper=10),
+    makeIntegerParam("maxdepth", lower=1, upper=30)
+)
+rancontrol <- makeTuneControlRandom(maxit=300L) # iterations
+set_cv <- makeResampleDesc("CV", iters=5L) # k fold cross validation
+
+########################### Build ########################### 
+# tune parameters
+set.seed(77)
+# tune_rp <- tuneParams(learner=learner_rp, task=train.task,
+                      # resampling=set_cv, par.set=ps_rp, control=rancontrol)
+# saveRDS(tune_rp, file="tune_rp.rds")
+tune_rp <- readRDS("./tune_rp.rds")
+print(tune_rp)
+new_rp <- setHyperPars(learner=learner_rp, par.vals=tune_rp$x) # set optimal parameters
+
+# train model
+acc_rp <- c()
+for (i in seq(1, 20)) {
+    model_rp <- train(new_rp, train.task)
+    pred_rp <- predict(model_rp, test.task)
+    conf_rp <- confusionMatrix(pred_rp$data$response, test$result)$overall["Accuracy"]
+    acc_rp <- c(acc_rp, conf_rp)
+}
+saveRDS(model_rp, file="model_rp.rds") # save model
+
+acc_rp <- sum(acc_rp)/20
+auc_rp <- mlr::performance(pred_rp, auc)
+print(paste0("rpart accuracy : ", round(acc_rp, 3)))
+print(paste0("rpart AUC : ", round(auc_rp, 3)))
+```
+
+
+## 5-7. gausspr
+
+Gaussian Processes is a non-parametric classification method which is based on a Bayesian methodology. It assumes some prior distribution on the underlying probability densities that guarantees some smoothness properties. The final classification is then determined as the one that provides a good fit for the observed data, while at the same time guaranteeing smoothness. This is achieved by taking the smoothness prior into account, while factoring in the observed classification of the training data.   
+    Pros.  One of the few machine learning algorithms that is based on a Bayesian methodology.  It is a very effective and fast classifier, also in unsupervised learning.   
+    Cons.  The performance of the method varies significantly depends on the data input.   
+
+<div style="width:250px; height=200px">
+![](./pic/gausspr.png)
+</div>
+
+```{r cache=T, message=FALSE}
+# getParamSet("classif.gausspr") 
+learner_gpr <- makeLearner("classif.gausspr", predict.type="prob")
+
+# set parameters
+ps_gpr <- makeParamSet(
+    makeNumericParam("sigma",lower=0.01, upper=1)
+)
+rancontrol <- makeTuneControlRandom(maxit=100L) # iterations
+set_cv <- makeResampleDesc("CV", iters=5L) # k fold cross validation
+
+########################### Build ########################### 
+# tune parameters
+set.seed(3333)
+# tune_gpr <- tuneParams(learner=learner_gpr, task=train.task, 
+                       # resampling=set_cv, par.set=ps_gpr, control=rancontrol)
+# saveRDS(tune_gpr, file="tune_gpr.rds")
+tune_gpr <- readRDS("./tune_gpr.rds")
+print(tune_gpr)
+new_gpr <- setHyperPars(learner=learner_gpr, par.vals=tune_gpr$x) # set optimal parameters
+
+# train model
+acc_gpr <- c()
+for (i in seq(1, 20)) {
+    model_gpr <- train(new_gpr, train.task)
+    pred_gpr <- predict(model_gpr, test.task)
+    conf_gpr <- confusionMatrix(pred_gpr$data$response, test$result)$overall["Accuracy"]
+    acc_gpr <- c(acc_gpr, conf_gpr)
+}
+saveRDS(model_gpr, file="model_gpr.rds") # save model
+
+acc_gpr <- sum(acc_gpr)/20
+auc_gpr <- mlr::performance(pred_gpr, auc)
+print(paste0("gausspr accuracy : ", round(acc_gpr, 3)))
+print(paste0("gausspr AUC : ", round(auc_gpr, 3)))
+```
+
+## 5-8. svm
+
+Support Vector Machine is a supervised machine learning algorithm which can be used for both classification or regression challenges.  Support Vector (frontier) is simply the co-ordinates of individual observation in the hyper-plane which best segregates or differentiates the two classes. [17]  
+     Pros. It works really well with clear margin of separation. It is effective in high dimensional spaces. It is effective in cases where number of dimensions is greater than the number of samples. [18] It uses a subset of training points in the decision function (called support vectors), so it is also memory efficient.  
+     Cons. Computation time is usually longer than normal machine learning algorithm.  It under perform with noise data such as data with lots of highly correlated features.   
+     
+<div style="width:250px; height=200px">
+![](./pic/svm.png)
+</div>
+
+```{r cache=T, message=FALSE}
+# getParamSet("classif.ksvm") 
+learner_svm <- makeLearner("classif.ksvm", predict.type="prob")
+
+# set parameters
+ps_svm <- makeParamSet(
+    makeNumericParam("C",lower=0.01, upper=1),
+    makeNumericParam("nu",lower=0.01, upper=1),
+    makeNumericParam("epsilon",lower=-1, upper=1),
+    makeNumericParam("sigma",lower=0.01, upper=1)
+)
+rancontrol <- makeTuneControlRandom(maxit=200L) # iterations
+set_cv <- makeResampleDesc("CV", iters=5L) # k fold cross validation
+
+########################### Build ########################### 
+# tune parameters
+set.seed(3333)
+# tune_svm <- tuneParams(learner=learner_svm, task=train.task, 
+                       # resampling=set_cv, par.set=ps_svm, control=rancontrol)
+# saveRDS(svm_tune, file="tune_svm.rds")
+tune_svm <- readRDS("./tune_svm.rds")
+print(tune_svm)
+new_svm <- setHyperPars(learner=learner_svm, par.vals=tune_svm$x) # set optimal parameters
+
+# train model
+acc_svm <- c()
+for (i in seq(1, 20)) {
+    model_svm <- train(new_svm, train.task)
+    pred_svm <- predict(model_svm, test.task)
+    conf_svm <- confusionMatrix(pred_svm$data$response, test$result)$overall["Accuracy"]
+    acc_svm <- c(acc_svm, conf_svm)
+}
+saveRDS(model_svm, file="model_svm.rds") # save model
+
+acc_svm <- sum(acc_svm)/20
+auc_svm <- mlr::performance(pred_svm, auc)
+print(paste0("svm accuracy : ", round(acc_svm, 3)))
+print(paste0("svm AUC : ", round(auc_svm, 3)))
+```
+
+
+## 5-9. Ensemble Learning (Boosting)
+
+An ensemble learning is a supervised learning technique for combining multiple predictions generated by different algorithms would normally deliver superior prediction power and more stable model. It is due to the diversification or independent nature as compared to each other. [1] The key to creating a powerful ensemble is model diversity and low correlation. An ensemble with two techniques that are very similar in nature will perform poorly than a more diverse model set. [2]
+
+Boosting is an approach to calculate the output using several different models and then weight the result using a weighting approach. One of the most common challenge with ensemble modeling is to find optimal weights to ensemble base models. [19] There are various methods to find the optimal weight for combining all base learners. It starts by classifying original data set and giving equal weights to each observation. If classes are predicted incorrectly using the first learner, then it gives higher weight to the missed classified observation. Being an iterative process, it continues to add classifier learner until a limit is reached in the number of models or accuracy.   
+     Pros. By combining the advantages and pitfalls of these approaches by varying the weighting formula, it results with a good predictive force for a wider range of input data, using different narrowly tuned models. It aims to decrease bias, not variance and it also suitable for low variance high bias models.   s
+     Cons. It also tends to over-fit the training data as well.  
+
+
+
+```{r cache=T, message=FALSE}
+library(ROCR)
+
+### Finding Best Weight Combination
+result <- c()
+result_df <- c()
+for (h in seq(0,20)/20) {
+ for (i in seq(0,20)/20) {
+  for (j in seq(0,20)/20) {
+   for (k in seq(0,20)/20) {
+    for (l in seq(0,20)/20) {
+     for (m in seq(0,20)/20) {
+       if ((m+l+k+j+i+h) != 1) {
+           break
+           } else {
+               # apply the weight values into each probabilities
+               prob_comb_1 <-
+                   m*pred_xgb$data$prob.1 + l*pred_svm$data$prob.1 +
+                   k*pred_rf$data$prob.1 + j*pred_rp$data$prob.1 +
+                   i*pred_gpr$data$prob.1 + h*pred_logreg$data$prob.1
+
+               # make prediction
+               pred_comb <- prediction(prob_comb_1, test_cleaned$result)
+            
+               # compute AUC
+               acu_comb <- as.numeric(performance(pred_comb, measure="auc")@y.values)
+               
+               # compute accuracy
+               pred_comb <- ifelse(prob_comb_1 > 0.5, 1, 0)
+               acc_comb <- as.numeric(
+                   confusionMatrix(
+                       pred_comb, test_cleaned$result)$overall["Accuracy"])
+               
+               # create data frame with computed values
+               result <- c(performance=acu_comb, accuracy=acc_comb, overall=acu_comb+acc_comb, 
+                           xgb=m, svm=l, rf=k, rp=j, gpr=i, logreg=h)
+               result_df <- rbind(result_df, result)
+           }}}}}}}
+```
+
+```{r cache=T}
+# display the weight result
+rownames(result_df) <- NULL
+result_df <- as.data.frame(result_df)
+head(result_df)
+
+# finding the index with maximum overall score
+max_idx <- which(result_df$overall == max(result_df$overall))
+result <- result_df[max_idx, ]
+rownames(result) <- NULL
+weights <- result[1, 4:ncol(result)] 
+saveRDS(weights, file="weights.rds")
+
+# apply the weights
+prob_comb_1 <- 
+    weights$xgb*pred_xgb$data$prob.1 + weights$svm*pred_svm$data$prob.1 + 
+    weights$rf*pred_rf$data$prob.1 + weights$rp*pred_rp$data$prob.1 + 
+    weights$gpr*pred_gpr$data$prob.1 + weights$logreg*pred_logreg$data$prob.1
+
+# find the best threashold point
+# acc_perf_comb <- performance(pred_comb, measure="acc")
+# acc_max_idx <- which.max(slot(acc_perf_comb, "y.values")[[1]])
+# threshold <- slot(acc_perf_comb, "x.values")[[1]][acc_max_idx]
+
+# make prediction
+pred_comb <- prediction(prob_comb_1, test_cleaned$result)
+
+# compute accuracy and AUC
+pred_comb_01 <- ifelse(prob_comb_1 > .5, 1, 0)
+acc_comb <- confusionMatrix(pred_comb_01, test$result)$overall["Accuracy"]
+auc_comb <- as.numeric(performance(pred_comb, "auc")@y.values)
+print(paste0("Ensemble leanring accuracy : ", round(acc_comb, 3)))
+print(paste0("Ensemble leanring AUC : ", round(auc_comb, 3)))
+print(weights)
+```
+
+# 6. Results
+```{r cache=T}
+# make 'result' dataframe 
+accuracy <- c(acc_comb, acc_svm, acc_rf, acc_xgb, acc_gpr, acc_logreg, acc_rp)
+auc <- c(auc_comb, auc_svm, auc_rf, auc_xgb, auc_gpr, auc_logreg, auc_rp)
+overall <- c(auc_comb+acc_comb, auc_svm+acc_svm, auc_rf+acc_rf, auc_xgb+acc_xgb, 
+             auc_gpr+acc_gpr, auc_logreg+acc_logreg, auc_rp+acc_rp)
+result_df <- data.frame(rbind(AUC=auc, Accuracy=accuracy, Overall=overall))
+names(result_df) <- c("esmbl", "svm", "rf", "xgb", "gpr", "lgreg", "rp")
+
+# round up the decimal values
+for(i in 1:ncol(result_df)){
+  result_df[, i] <- round(result_df[,i], 3)
+}
+
+df <- generateThreshVsPerfData(list(xgboost=pred_xgb, svm=pred_svm, randomforest=pred_rf,
+                                    logreg=pred_logreg, gaussian=pred_gpr, rpart=pred_rp),
+                               measures=list(fpr, tpr))
+
+qplot(x=fpr, y=tpr, color=learner, data=df$data, geom="path") # plot ACU
+```
+
+```{r cache=T}
+# Ensemble Model Weight
+weights
+
+# Result
+result_df
+```
+
+At certain threshold, "svm"and "random forest"perform extremely good but overall 'xgb' performs the best for the AUC results.  However, the accuracy of 'svm' performs the best as a single model with accuracy of 0.736. The difference AUC value between 'xgb' and 'svm' does not show the significance; whereas the accuracy of 'svm' overwhelming the accuracy of 'xgb'. Table 2 shows the weight distribution on each predictions to build the 'esmbl' model which is the combination of multiple models. It is interesting to see some bad model such as "rp"and "logreg"is contributing more weight than better models such as "xgb"and "rf", again ensemble model becomes the best with diverse and low correlated models.  'esmbl' model performs the best out of all models with accuracy of 0.781 and AUC value of 0.754. By comparison between the base model (logreg), and the ensemble model, the both accuracy (over 14%) and AUC (4%) are improved.
+
+# 7. Feature Exploration
+
+- We found some interesting features while we were performing feature cleaning & selection. Let's take a look at few features.    
+
+```{r cache=T}
+# Features
+imp_cols
+plot_infogain
+plot_chi
+plot_rf
+```
+
+- As the chart shown, feature 'GI_11545760.S' and 'GI_13375790.S' took top 2 in every chart.  It's worth take a look.  
+
+**GI_11545760.S**
+```{r cache=T}
+ggplot(full, aes(factor(result), GI_11545760.S)) +
+    geom_boxplot(aes(fill = factor(result)))
+
+ggplot(full, aes(GI_11545760.S, colour=result)) + 
+    geom_density()
+
+mean(full[full$result == 1, c('GI_11545760.S')])
+mean(full[full$result == 0, c('GI_11545760.S')])
+```
+
+**GI_13375790.S**
+```{r cache=T}
+ggplot(full, aes(factor(result), GI_13375790.S)) +
+    geom_boxplot(aes(fill = factor(result)))
+
+ggplot(full, aes(GI_13375790.S, colour=result)) + 
+    geom_density()
+
+mean(full[full$result == 1, c('GI_13375790.S')])
+mean(full[full$result == 0, c('GI_13375790.S')])
+```
+
+Feature "GI_11545760.S"and "GI_13375790.S"took top 2 in every chart.  The mean of feature "GI_11545760"with disease is 0.1126 and without disease is -0.1148.  and the mean of feature "GI_11375790.S" with disease is 0.1862 and without disease is -0.1743.  Although, those two variables are taking top 2 on every test, those do not show the significant level of 0.05 > p, as Fig. 5-6 are shown.  Thus, combination of multiple features does contribute more predictive power rather than single important variables.  
+
+
+# 8. Conclusion and Future Improvement  
+
+An ensemble model, which is the combination of multiple models to increase the predictive force, show do outperform the best single model, which in this case support vector machine, with proper weight distribution on each model"s prediction.   
+    Various feature selection algorithms incredibly reduce the dimensionality of the data from over 8,500 features to 30 and increases the accuracy of the model from 63% to 78%, which also significantly reduce the computational intensity by selecting only the core combination of the features.  
+    Although, the study was able to improve the accuracy of more than 14% from the base model, following ways can bring even more improvement,
+    
+1. Performing better missing value imputation
+2. Using more machine learning algorithm to build the ensemble learning
+3. Finding better hyper-parameters for each models
+4. Adding new features by performing better feature engineering
+5. Finding right number and the combination of important features
