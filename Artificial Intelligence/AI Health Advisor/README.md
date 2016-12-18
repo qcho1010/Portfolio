@@ -1,4 +1,4 @@
-[application](https://kyucho.shinyapps.io/Health_Advisor/)
+Click [A.I Helth Care App](https://kyucho.shinyapps.io/Health_Advisor/)
 
 ![ArchHacks Logo](logo.png)
 
